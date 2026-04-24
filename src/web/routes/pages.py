@@ -96,6 +96,8 @@ async def channels_create(
     voice_id: str = Form("nova"),
     accent_color: str = Form("#FFD400"),
     font_family: str = Form("Montserrat"),
+    visual_mode: str = Form("stock"),
+    image_style: str = Form(""),
 ):
     with session_scope() as s:
         c = Channel(
@@ -107,6 +109,8 @@ async def channels_create(
                 "accent_color": accent_color,
                 "text_color": "#FFFFFF",
                 "font_family": font_family,
+                "visual_mode": visual_mode,
+                "image_style": image_style.strip(),
             },
             upload_defaults={"privacy": "public", "made_for_kids": False},
         )
@@ -121,6 +125,68 @@ async def channel_delete(channel_id: int, request: Request):
         if c:
             s.delete(c)
     request.app.state.scheduler.reload_schedules()
+    return RedirectResponse("/channels", status_code=303)
+
+
+@router.get("/channels/{channel_id}/edit", response_class=HTMLResponse)
+async def channel_edit_get(request: Request, channel_id: int):
+    with session_scope() as s:
+        c = s.get(Channel, channel_id)
+        if not c:
+            return RedirectResponse("/channels", status_code=303)
+        niches = s.execute(select(Niche)).scalars().all()
+        ctx = {
+            "channel": {
+                "id": c.id, "name": c.name,
+                "platform": c.platform.value if isinstance(c.platform, Platform)
+                    else c.platform,
+                "niche_id": c.niche_id,
+                "style": c.style or {},
+                "upload_defaults": c.upload_defaults or {},
+                "active": c.active,
+            },
+            "niches": [{"id": n.id, "name": n.name} for n in niches],
+            "platforms": [p.value for p in Platform],
+        }
+    return _render(request, "channel_edit.html", ctx)
+
+
+@router.post("/channels/{channel_id}/edit")
+async def channel_edit_post(
+    channel_id: int,
+    request: Request,
+    name: str = Form(...),
+    platform: str = Form(...),
+    niche_id: int = Form(...),
+    voice_id: str = Form("nova"),
+    accent_color: str = Form("#FFD400"),
+    font_family: str = Form("Montserrat"),
+    visual_mode: str = Form("stock"),
+    image_style: str = Form(""),
+    privacy: str = Form("public"),
+    active: bool = Form(True),
+):
+    with session_scope() as s:
+        c = s.get(Channel, channel_id)
+        if not c:
+            return RedirectResponse("/channels", status_code=303)
+        c.name = name
+        c.platform = Platform(platform)
+        c.niche_id = niche_id
+        c.active = active
+        style = dict(c.style or {})
+        style.update({
+            "voice_id": voice_id,
+            "accent_color": accent_color,
+            "text_color": "#FFFFFF",
+            "font_family": font_family,
+            "visual_mode": visual_mode,
+            "image_style": image_style.strip(),
+        })
+        c.style = style
+        ud = dict(c.upload_defaults or {})
+        ud["privacy"] = privacy
+        c.upload_defaults = ud
     return RedirectResponse("/channels", status_code=303)
 
 
@@ -166,6 +232,51 @@ async def niche_delete(niche_id: int, request: Request):
         n = s.get(Niche, niche_id)
         if n:
             s.delete(n)
+    return RedirectResponse("/niches", status_code=303)
+
+
+@router.get("/niches/{niche_id}/edit", response_class=HTMLResponse)
+async def niche_edit_get(request: Request, niche_id: int):
+    with session_scope() as s:
+        n = s.get(Niche, niche_id)
+        if not n:
+            return RedirectResponse("/niches", status_code=303)
+        ctx = {
+            "niche": {
+                "id": n.id, "name": n.name, "tone": n.tone,
+                "emotions": ", ".join(n.emotions or []),
+                "language": n.language,
+                "video_length_seconds": n.video_length_seconds,
+                "description": n.description or "",
+                "prompt_additions": n.prompt_additions or "",
+            }
+        }
+    return _render(request, "niche_edit.html", ctx)
+
+
+@router.post("/niches/{niche_id}/edit")
+async def niche_edit_post(
+    niche_id: int,
+    request: Request,
+    name: str = Form(...),
+    tone: str = Form("neutral"),
+    emotions: str = Form(""),
+    language: str = Form("en"),
+    video_length_seconds: int = Form(25),
+    description: str = Form(""),
+    prompt_additions: str = Form(""),
+):
+    with session_scope() as s:
+        n = s.get(Niche, niche_id)
+        if not n:
+            return RedirectResponse("/niches", status_code=303)
+        n.name = name
+        n.tone = tone
+        n.emotions = [e.strip() for e in emotions.split(",") if e.strip()]
+        n.language = language
+        n.video_length_seconds = int(video_length_seconds)
+        n.description = description
+        n.prompt_additions = prompt_additions
     return RedirectResponse("/niches", status_code=303)
 
 

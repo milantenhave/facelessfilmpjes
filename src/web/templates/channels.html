@@ -32,6 +32,7 @@
           <form method="post" action="/channels/{{ c.id }}/run-now" style="display:inline">
             <button class="small">Run now</button>
           </form>
+          <a class="btn small" href="/channels/{{ c.id }}/edit">Edit</a>
           <form method="post" action="/channels/{{ c.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Delete channel {{ c.name }}?');">
             <button class="small danger">Delete</button>
@@ -77,6 +78,17 @@
     </label>
     <label>Accent color <input name="accent_color" value="#FFD400" type="color"></label>
     <label>Font family <input name="font_family" value="Montserrat"></label>
+    <label>Visual mode
+      <select name="visual_mode">
+        <option value="stock">stock — Pexels + Pixabay (free)</option>
+        <option value="ai_images">ai_images — DALL·E per sentence (~€0.04 ea)</option>
+        <option value="mixed">mixed — alternates AI + stock</option>
+      </select>
+    </label>
+    <label class="full">AI image style (optional, for ai_images / mixed)
+      <input name="image_style"
+             placeholder="e.g. 'cinematic photorealistic, 35mm film, dramatic lighting'">
+    </label>
     <button type="submit">Create channel</button>
   </form>
   {% if not niches %}

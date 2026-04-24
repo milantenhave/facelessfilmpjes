@@ -17,6 +17,7 @@
         <td>{{ n.language }}</td>
         <td>{{ n.video_length_seconds }}</td>
         <td>
+          <a class="btn small" href="/niches/{{ n.id }}/edit">Edit</a>
           <form method="post" action="/niches/{{ n.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Delete niche {{ n.name }}?');">
             <button class="small danger">Delete</button>
