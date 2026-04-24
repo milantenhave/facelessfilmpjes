@@ -15,6 +15,20 @@ from .voice_generator import VoiceClip
 log = get_logger(__name__)
 
 
+def _clean(value: str) -> str:
+    """Strip surrounding whitespace / quotes / inline '# comments'.
+
+    systemd's EnvironmentFile does not strip inline comments, so a line like
+    `OPENAI_TTS_MODEL=tts-1-hd   # tts-1 (cheap) | tts-1-hd (better)` ends up
+    with the model literally containing the comment. This guard lets the
+    service survive that kind of `.env` pollution.
+    """
+    v = (value or "").strip().strip('"').strip("'")
+    if "#" in v:
+        v = v.split("#", 1)[0].strip()
+    return v
+
+
 class OpenAITTS:
     """Calls the OpenAI audio API, writes an mp3 or wav, reports duration."""
 
@@ -29,9 +43,11 @@ class OpenAITTS:
                  model: Optional[str] = None,
                  speed: float = 1.0,
                  fmt: str = "mp3") -> None:
-        self.api_key = os.getenv("OPENAI_API_KEY", "")
-        self.voice = voice or os.getenv("OPENAI_TTS_VOICE") or self.DEFAULT_VOICE
-        self.model = model or os.getenv("OPENAI_TTS_MODEL") or self.DEFAULT_MODEL
+        self.api_key = _clean(os.getenv("OPENAI_API_KEY", ""))
+        self.voice = _clean(voice or os.getenv("OPENAI_TTS_VOICE") or "") \
+            or self.DEFAULT_VOICE
+        self.model = _clean(model or os.getenv("OPENAI_TTS_MODEL") or "") \
+            or self.DEFAULT_MODEL
         self.speed = max(0.25, min(4.0, float(speed)))
         self.fmt = fmt
 
