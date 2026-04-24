@@ -46,30 +46,38 @@ class OpenAITTS:
             raise RuntimeError("OPENAI_API_KEY missing for OpenAI TTS.")
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
-        resp = requests.post(
-            self.API,
-            headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json",
-            },
-            json={
-                "model": self.model,
-                "voice": voice_override or self.voice,
-                "input": text,
-                "speed": self.speed,
-                "response_format": self.fmt,
-            },
-            timeout=120,
-        )
-        if resp.status_code >= 400:
-            raise RuntimeError(f"OpenAI TTS error {resp.status_code}: "
-                               f"{resp.text[:400]}")
-        out_path.write_bytes(resp.content)
-        duration = self._probe_duration(out_path, text)
-        log.info("OpenAI TTS wrote %s (%.2fs, voice=%s, model=%s)",
-                 out_path, duration, self.voice, self.model)
-        return VoiceClip(path=out_path, duration=duration,
-                         engine=f"openai:{self.model}:{self.voice}")
+        models_to_try = [self.model]
+        if self.model == "tts-1-hd":
+            models_to_try.append("tts-1")    # fallback if HD is not enabled
+
+        last_err = ""
+        for model in models_to_try:
+            resp = requests.post(
+                self.API,
+                headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "voice": voice_override or self.voice,
+                    "input": text,
+                    "speed": self.speed,
+                    "response_format": self.fmt,
+                },
+                timeout=120,
+            )
+            if resp.status_code < 400:
+                out_path.write_bytes(resp.content)
+                duration = self._probe_duration(out_path, text)
+                log.info("OpenAI TTS wrote %s (%.2fs, voice=%s, model=%s)",
+                         out_path, duration, self.voice, model)
+                return VoiceClip(path=out_path, duration=duration,
+                                 engine=f"openai:{model}:{self.voice}")
+            last_err = f"{resp.status_code}: {resp.text[:400]}"
+            log.warning("OpenAI TTS %s rejected (%s); trying next model",
+                        model, last_err)
+        raise RuntimeError(f"OpenAI TTS error {last_err}")
 
     @staticmethod
     def _probe_duration(path: Path, text: str) -> float:

@@ -30,6 +30,19 @@ from ..voice_generator import TTSFactory
 
 log = get_logger(__name__)
 
+
+def _unwrap(exc: BaseException) -> str:
+    """Surface the real error hiding behind tenacity.RetryError."""
+    try:
+        from tenacity import RetryError
+        if isinstance(exc, RetryError) and exc.last_attempt is not None:
+            inner = exc.last_attempt.exception()
+            if inner is not None:
+                return f"{type(inner).__name__}: {inner}"
+    except Exception:
+        pass
+    return f"{type(exc).__name__}: {exc}"
+
 # Registry of temporary served files (voice audio) that need to be reachable
 # by Creatomate. The FastAPI /media/tmp/<token> route reads from this map.
 _TEMP_FILES: dict[str, Path] = {}
@@ -80,9 +93,14 @@ class JobRunner:
         try:
             self._run_inner(job_id)
         except Exception as exc:   # noqa: BLE001
-            log.exception("job %d failed", job_id)
-            self._set_status(job_id, JobStatus.failed, 100.0, str(exc))
-            publish_log(job_id, f"failed: {exc}", level="error")
+            msg = _unwrap(exc)
+            log.exception("job %d failed: %s", job_id, msg)
+            self._set_status(job_id, JobStatus.failed, 100.0, msg)
+            publish_log(job_id, f"failed: {msg}", level="error")
+            with session_scope() as s:
+                j = s.get(Job, job_id)
+                if j:
+                    j.error = msg
 
     # ------------------------------------------------------------------
     def _run_inner(self, job_id: int) -> None:

@@ -40,5 +40,18 @@ class TTSFactory:
                                                voice_override=voice_override)
             except Exception as exc:  # noqa: BLE001
                 log.warning("OpenAI TTS failed (%s) — falling back to local.",
-                            exc)
+                            _unwrap(exc))
         return self.local.synthesize(text, out_path)
+
+
+def _unwrap(exc: BaseException) -> str:
+    """Surface the real error hiding behind tenacity.RetryError."""
+    try:
+        from tenacity import RetryError
+        if isinstance(exc, RetryError) and exc.last_attempt is not None:
+            inner = exc.last_attempt.exception()
+            if inner is not None:
+                return f"{type(inner).__name__}: {inner}"
+    except Exception:
+        pass
+    return f"{type(exc).__name__}: {exc}"
