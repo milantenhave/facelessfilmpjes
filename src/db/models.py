@@ -53,6 +53,11 @@ class Niche(Base):
     )
     language: Mapped[str] = mapped_column(String(8), default="en")
     video_length_seconds: Mapped[int] = mapped_column(Integer, default=25)
+    reading_level: Mapped[str] = mapped_column(
+        String(16), default="simple",
+        doc="simple | normal | advanced. Drives script vocabulary and "
+            "sentence length.",
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
     channels: Mapped[list["Channel"]] = relationship(back_populates="niche")

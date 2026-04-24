@@ -28,10 +28,26 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False,
 
 
 def init_db() -> None:
-    """Create all tables. Alembic migrations are optional — for a solo user
-    SQLite app, auto-create is fine."""
+    """Create all tables and apply lightweight inline migrations.
+
+    We avoid Alembic for this solo-user SQLite app. New columns are added
+    idempotently so pulling a newer version never requires manual SQL.
+    """
+    from sqlalchemy import text
     from . import models  # noqa: F401 — ensure models are imported
     Base.metadata.create_all(bind=engine)
+
+    migrations: list[tuple[str, str, str]] = [
+        # (table, column, "ALTER TABLE ... ADD COLUMN ..." )
+        ("niches", "reading_level",
+         "ALTER TABLE niches ADD COLUMN reading_level TEXT DEFAULT 'simple'"),
+    ]
+    with engine.begin() as conn:
+        for table, column, ddl in migrations:
+            rows = conn.execute(text(f"PRAGMA table_info({table})")).fetchall()
+            existing = {r[1] for r in rows}
+            if column not in existing:
+                conn.execute(text(ddl))
 
 
 def get_session() -> Session:

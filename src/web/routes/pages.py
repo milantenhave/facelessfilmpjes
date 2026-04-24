@@ -202,6 +202,7 @@ async def niches_list(request: Request):
             "id": n.id, "name": n.name, "tone": n.tone,
             "emotions": n.emotions or [],
             "language": n.language,
+            "reading_level": getattr(n, "reading_level", "simple") or "simple",
             "video_length_seconds": n.video_length_seconds,
             "description": n.description,
             "prompt_additions": n.prompt_additions,
@@ -216,17 +217,20 @@ async def niches_create(
     tone: str = Form("neutral"),
     emotions: str = Form(""),
     language: str = Form("en"),
+    reading_level: str = Form("simple"),
     video_length_seconds: int = Form(25),
     description: str = Form(""),
     prompt_additions: str = Form(""),
 ):
     emotion_list = [e.strip() for e in emotions.split(",") if e.strip()]
     with session_scope() as s:
-        s.add(Niche(
+        n = Niche(
             name=name, tone=tone, emotions=emotion_list,
             language=language, video_length_seconds=video_length_seconds,
             description=description, prompt_additions=prompt_additions,
-        ))
+        )
+        n.reading_level = reading_level or "simple"
+        s.add(n)
     return RedirectResponse("/niches", status_code=303)
 
 
@@ -250,6 +254,8 @@ async def niche_edit_get(request: Request, niche_id: int):
                 "id": n.id, "name": n.name, "tone": n.tone,
                 "emotions": ", ".join(n.emotions or []),
                 "language": n.language,
+                "reading_level": getattr(n, "reading_level", "simple")
+                    or "simple",
                 "video_length_seconds": n.video_length_seconds,
                 "description": n.description or "",
                 "prompt_additions": n.prompt_additions or "",
@@ -266,6 +272,7 @@ async def niche_edit_post(
     tone: str = Form("neutral"),
     emotions: str = Form(""),
     language: str = Form("en"),
+    reading_level: str = Form("simple"),
     video_length_seconds: int = Form(25),
     description: str = Form(""),
     prompt_additions: str = Form(""),
@@ -278,6 +285,7 @@ async def niche_edit_post(
         n.tone = tone
         n.emotions = [e.strip() for e in emotions.split(",") if e.strip()]
         n.language = language
+        n.reading_level = reading_level or "simple"
         n.video_length_seconds = int(video_length_seconds)
         n.description = description
         n.prompt_additions = prompt_additions

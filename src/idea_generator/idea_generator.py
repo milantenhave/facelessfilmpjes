@@ -56,21 +56,30 @@ class IdeaGenerator:
     def _ideas_for_niche(self, niche: dict, patterns: list[str]) -> list[Idea]:
         name = niche.get("name", "general")
         tone = niche.get("tone", "neutral")
+        reading_level = (niche.get("reading_level") or "simple").lower()
         emotions = ", ".join(niche.get("emotions", [])) or "curiosity"
         hint = ""
         if patterns:
             hint = "\nPrefer these proven patterns:\n- " + "\n- ".join(patterns[:5])
 
+        level_hint = {
+            "simple":   "Hooks must be easy for a 10-year-old. Short, everyday words only.",
+            "normal":   "Hooks in clear conversational English, 8th-grade level.",
+            "advanced": "Confident adult register is fine; niche vocabulary allowed.",
+        }.get(reading_level, "Hooks must be easy for a 10-year-old. Short, everyday words only.")
+
+        system = IDEA_SYSTEM + "\n" + level_hint
         user = (
             f"niche=\"{name}\"\n"
             f"tone=\"{tone}\"\n"
             f"emotions=\"{emotions}\"\n"
+            f"reading_level={reading_level}\n"
             f"count={self.per_niche}\n"
             f"language={self.cfg.get('language', 'en')}"
             f"{hint}"
         )
         try:
-            resp = self.llm.complete(IDEA_SYSTEM, user)
+            resp = self.llm.complete(system, user)
             data = json.loads(resp.text)
             raw = data.get("ideas", [])
         except Exception as exc:   # noqa: BLE001
