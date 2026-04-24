@@ -152,10 +152,16 @@ class JobRunner:
         voice = self.tts.synthesize(script.full_text, slot["audio"],
                                     voice_override=voice_override)
         voice_path = Path(voice.path)
-        if voice.engine.startswith("silence") or voice.engine.startswith("espeak") \
-                or voice.engine.startswith("pyttsx3"):
+        if voice.engine.startswith("silence"):
+            raise RuntimeError(
+                "TTS fell back to SILENT placeholder — the video would have no "
+                "audio. Check OPENAI_API_KEY / credit / model access in the "
+                "earlier log lines for the root cause."
+            )
+        if voice.engine.startswith("espeak") or voice.engine.startswith("pyttsx3"):
             publish_log(job_id,
-                        f"voice fell back to {voice.engine}; output may be low quality",
+                        f"voice is using low-quality fallback ({voice.engine}) — "
+                        "fix OpenAI TTS for pro output",
                         level="warn")
 
         # -- 4. Media ---------------------------------------------------

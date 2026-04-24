@@ -42,8 +42,12 @@ class TTSFactory:
                 return self._openai.synthesize(text, target,
                                                voice_override=voice_override)
             except Exception as exc:  # noqa: BLE001
-                log.warning("OpenAI TTS failed (%s) — falling back to local.",
-                            _unwrap(exc))
+                # Log loudly — this used to silently produce empty videos.
+                log.error("OpenAI TTS FAILED: %s", _unwrap(exc))
+                log.error("   chars=%d  voice=%s  model=%s",
+                          len(text), self._openai.voice, self._openai.model)
+                log.error("   falling back to local TTS (output will be "
+                          "low quality or silent)")
         target = out_path.with_suffix(".wav")
         return self.local.synthesize(text, target)
 
