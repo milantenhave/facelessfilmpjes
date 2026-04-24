@@ -149,8 +149,13 @@ class JobRunner:
         self._set_status(job_id, JobStatus.voicing, 30, "synthesising voice")
         slot = self.paths.video_slot(job_id)
         voice_override = style.get("voice_id") or None
+        try:
+            speed_override = float(style.get("voice_speed") or 1.0)
+        except (TypeError, ValueError):
+            speed_override = 1.0
         voice = self.tts.synthesize(script.full_text, slot["audio"],
-                                    voice_override=voice_override)
+                                    voice_override=voice_override,
+                                    speed_override=speed_override)
         voice_path = Path(voice.path)
         if voice.engine.startswith("silence"):
             raise RuntimeError(

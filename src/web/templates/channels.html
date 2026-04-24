@@ -76,6 +76,15 @@
         <audio id="voice-audio" controls style="display:none; max-width: 220px;"></audio>
       </div>
     </label>
+    <label>Voice speed
+      <select name="voice_speed" id="voice_speed">
+        <option value="0.9">0.9 — calm, documentary</option>
+        <option value="1.0" selected>1.0 — natural (default)</option>
+        <option value="1.1">1.1 — punchy (TikTok sweet spot)</option>
+        <option value="1.2">1.2 — fast, energetic</option>
+        <option value="1.3">1.3 — very fast, hook-heavy</option>
+      </select>
+    </label>
     <label>Accent color <input name="accent_color" value="#FFD400" type="color"></label>
     <label>Font family <input name="font_family" value="Montserrat"></label>
     <label>Visual mode
@@ -102,11 +111,13 @@
   if (!btn) return;
   btn.addEventListener('click', async () => {
     const voice = document.getElementById('voice_id').value;
+    const speedEl = document.getElementById('voice_speed');
+    const speed = speedEl ? speedEl.value : '1.0';
     const audio = document.getElementById('voice-audio');
     btn.disabled = true;
     btn.textContent = '… loading';
     try {
-      const url = `/api/voice/sample?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent('This is how your channel will sound on auto pilot.')}`;
+      const url = `/api/voice/sample?voice=${encodeURIComponent(voice)}&speed=${encodeURIComponent(speed)}`;
       audio.src = url;
       audio.style.display = 'inline-block';
       await audio.play();

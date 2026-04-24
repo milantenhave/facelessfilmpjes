@@ -95,14 +95,16 @@ async def delete_job(job_id: int):
 async def voice_sample(
     request: Request,
     voice: str = Query("nova"),
-    text: str = Query("This is what the voice sounds like."),
+    speed: float = Query(1.0),
+    text: str = Query("This is what the voice sounds like on auto pilot."),
 ):
-    """Synthesize a 1-shot sample so you can audition voices in the UI."""
+    """Synthesize a 1-shot sample so you can audition voices + speed in the UI."""
     cfg = request.app.state.cfg
     tts = TTSFactory(cfg)
     tmp = Path(tempfile.mkstemp(suffix=".mp3")[1])
     try:
-        clip = tts.synthesize(text, tmp, voice_override=voice)
+        clip = tts.synthesize(text, tmp, voice_override=voice,
+                              speed_override=speed)
     except Exception as exc:   # noqa: BLE001
         raise HTTPException(500, f"voice sample failed: {exc}")
     return FileResponse(str(clip.path), media_type="audio/mpeg",

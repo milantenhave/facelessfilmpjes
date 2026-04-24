@@ -35,12 +35,16 @@ class TTSFactory:
             self._openai = OpenAITTS(voice=voice, model=model, speed=speed)
 
     def synthesize(self, text: str, out_path: Path,
-                   voice_override: str | None = None) -> VoiceClip:
+                   voice_override: str | None = None,
+                   speed_override: float | None = None) -> VoiceClip:
         if self._openai and self._openai.available():
             target = out_path.with_suffix(".mp3")
             try:
-                return self._openai.synthesize(text, target,
-                                               voice_override=voice_override)
+                return self._openai.synthesize(
+                    text, target,
+                    voice_override=voice_override,
+                    speed_override=speed_override,
+                )
             except Exception as exc:  # noqa: BLE001
                 # Log loudly — this used to silently produce empty videos.
                 log.error("OpenAI TTS FAILED: %s", _unwrap(exc))

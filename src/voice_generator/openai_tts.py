@@ -57,7 +57,8 @@ class OpenAITTS:
     @retry(stop=stop_after_attempt(3),
            wait=wait_exponential(multiplier=1, min=2, max=10))
     def synthesize(self, text: str, out_path: Path,
-                   voice_override: Optional[str] = None) -> VoiceClip:
+                   voice_override: Optional[str] = None,
+                   speed_override: Optional[float] = None) -> VoiceClip:
         if not self.api_key:
             raise RuntimeError("OPENAI_API_KEY missing for OpenAI TTS.")
         out_path.parent.mkdir(parents=True, exist_ok=True)
@@ -65,6 +66,9 @@ class OpenAITTS:
         models_to_try = [self.model]
         if self.model == "tts-1-hd":
             models_to_try.append("tts-1")    # fallback if HD is not enabled
+
+        effective_speed = max(0.25, min(4.0, float(
+            speed_override if speed_override is not None else self.speed)))
 
         last_err = ""
         for model in models_to_try:
@@ -78,7 +82,7 @@ class OpenAITTS:
                     "model": model,
                     "voice": voice_override or self.voice,
                     "input": text,
-                    "speed": self.speed,
+                    "speed": effective_speed,
                     "response_format": self.fmt,
                 },
                 timeout=120,
