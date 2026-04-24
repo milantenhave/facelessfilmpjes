@@ -7,7 +7,7 @@
   <h2>Existing</h2>
   {% if channels %}
   <table>
-    <thead><tr><th>Name</th><th>Platform</th><th>Niche</th><th>Connected</th><th>Schedules</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Platform</th><th>Niche</th><th>Voice</th><th>Connected</th><th>Schedules</th><th></th></tr></thead>
     <tbody>
     {% for c in channels %}
       <tr>
@@ -15,17 +15,23 @@
         <td>{{ c.platform }}</td>
         <td>{{ c.niche }}</td>
         <td>
+          <code>{{ c.style.voice_id or "nova" }}</code>
+        </td>
+        <td>
           {% if c.youtube_connected %}
             <span class="ok">✓ {{ c.youtube_account }}</span>
             <form method="post" action="/oauth/youtube/disconnect/{{ c.id }}" style="display:inline">
               <button class="small danger">Disconnect</button>
             </form>
           {% else %}
-            <a class="btn" href="/oauth/youtube/start?channel_id={{ c.id }}">Connect YouTube</a>
+            <a class="btn small" href="/oauth/youtube/start?channel_id={{ c.id }}">Connect YouTube</a>
           {% endif %}
         </td>
         <td>{{ c.schedules|length }}</td>
         <td>
+          <form method="post" action="/channels/{{ c.id }}/run-now" style="display:inline">
+            <button class="small">Run now</button>
+          </form>
           <form method="post" action="/channels/{{ c.id }}/delete" style="display:inline"
                 onsubmit="return confirm('Delete channel {{ c.name }}?');">
             <button class="small danger">Delete</button>
@@ -52,7 +58,23 @@
         {% for n in niches %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}
       </select>
     </label>
-    <label>Voice (OpenAI TTS) <input name="voice_id" value="nova" placeholder="alloy/nova/echo/onyx/shimmer/..."></label>
+    <label>Voice
+      <div class="row">
+        <select name="voice_id" id="voice_id">
+          <option value="nova">nova — warm female, neutral</option>
+          <option value="shimmer">shimmer — light female, friendly</option>
+          <option value="alloy">alloy — balanced, neutral</option>
+          <option value="echo">echo — warm male, mid pitch</option>
+          <option value="fable">fable — British male, storytelling</option>
+          <option value="onyx">onyx — deep male, authoritative</option>
+          <option value="ash">ash — calm male</option>
+          <option value="sage">sage — soft female, reassuring</option>
+          <option value="verse">verse — expressive, dramatic</option>
+        </select>
+        <button type="button" class="small" id="preview-voice">▶ preview</button>
+        <audio id="voice-audio" controls style="display:none; max-width: 220px;"></audio>
+      </div>
+    </label>
     <label>Accent color <input name="accent_color" value="#FFD400" type="color"></label>
     <label>Font family <input name="font_family" value="Montserrat"></label>
     <button type="submit">Create channel</button>
@@ -61,4 +83,24 @@
   <p class="note">Create a <a href="/niches">niche</a> first.</p>
   {% endif %}
 </section>
+
+<script>
+(function(){
+  const btn = document.getElementById('preview-voice');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const voice = document.getElementById('voice_id').value;
+    const audio = document.getElementById('voice-audio');
+    btn.disabled = true;
+    btn.textContent = '… loading';
+    try {
+      const url = `/api/voice/sample?voice=${encodeURIComponent(voice)}&text=${encodeURIComponent('This is how your channel will sound on auto pilot.')}`;
+      audio.src = url;
+      audio.style.display = 'inline-block';
+      await audio.play();
+    } catch(e) { alert('voice preview failed: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '▶ preview'; }
+  });
+})();
+</script>
 {% endblock %}

@@ -1,16 +1,23 @@
 """Creatomate cloud renderer.
 
-Sends a JSON `source` describing a 9:16 composition (background clips,
-voice-over, optional music, word-by-word animated captions) and polls for
-the finished MP4.
+Builds a 9:16 composition with:
+- background video clips (fit=cover, subtle Ken Burns, crossfades)
+- voice-over (our OpenAI TTS MP3, served from PUBLIC_BASE_URL/media/tmp/<t>)
+- optional royalty-free background music (low volume)
+- word-by-word animated captions with keyword highlighting
 
-All media referenced by Creatomate must be reachable at a public URL. Stock
-footage from Pexels/Pixabay is already public. The voice-over is served from
-our FastAPI `/media/tmp/<uuid>` endpoint with a short-lived signed token.
+Key visual tweaks for a "pro" look:
+- Each clip section uses a random `trim_start` so repeats of the same source
+  still show different footage.
+- Captions are uppercase, centered slightly above the lower third, with
+  pop-in animation and colour highlights on long/keyword-like tokens.
+- Crossfades of 0.3s between sections give smoother pacing.
 """
 from __future__ import annotations
 
 import os
+import random
+import re
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,11 +34,12 @@ log = get_logger(__name__)
 
 @dataclass
 class MediaSection:
-    """One contiguous background clip covering part of the timeline."""
     url: str
-    time: float         # start time on the master timeline
+    time: float
     duration: float
     fit: str = "cover"
+    native_duration: float = 0.0     # of the source, for smart trim
+    is_video: bool = True
 
 
 @dataclass
@@ -58,11 +66,6 @@ class RenderResult:
 
 
 class CreatomateRenderer:
-    """Thin wrapper around the Creatomate REST API.
-
-    Docs: https://creatomate.com/docs/api/rest-api/introduction
-    """
-
     API_BASE = "https://api.creatomate.com/v1"
 
     def __init__(self, api_key: Optional[str] = None,
@@ -75,7 +78,7 @@ class CreatomateRenderer:
     def available(self) -> bool:
         return bool(self.api_key)
 
-    # -- public API ----------------------------------------------------
+    # ------------------------------------------------------------------
     @retry(stop=stop_after_attempt(3),
            wait=wait_exponential(multiplier=1, min=2, max=15))
     def render(self, req: RenderRequest, out_path: Path,
@@ -84,8 +87,9 @@ class CreatomateRenderer:
             raise RuntimeError("CREATOMATE_API_KEY is not set.")
 
         source = self._build_source(req)
-        log.info("creatomate: submitting render (duration=%.2fs, elements=%d)",
-                 req.duration, len(source["elements"]))
+        log.info("creatomate: submitting render "
+                 "(duration=%.2fs, sections=%d, words=%d)",
+                 req.duration, len(req.sections), len(req.word_cues))
 
         resp = requests.post(
             f"{self.API_BASE}/renders",
@@ -103,7 +107,7 @@ class CreatomateRenderer:
         self._download(result.url, out_path)
         return result
 
-    # -- helpers -------------------------------------------------------
+    # ------------------------------------------------------------------
     def _headers(self) -> dict:
         return {
             "Authorization": f"Bearer {self.api_key}",
@@ -121,15 +125,15 @@ class CreatomateRenderer:
             status = data.get("status", "planned")
             if status in ("succeeded", "failed"):
                 if status == "failed":
-                    raise RuntimeError(f"Creatomate render failed: "
-                                       f"{data.get('error_message', data)}")
+                    raise RuntimeError(
+                        f"Creatomate render failed: "
+                        f"{data.get('error_message', data)}"
+                    )
                 return RenderResult(
                     id=render_id, status=status,
                     url=data.get("url", ""),
                     duration=float(data.get("duration", 0) or 0),
                 )
-            # Creatomate doesn't expose a percentage on /renders/:id; we
-            # approximate with elapsed time vs typical render time.
             elapsed = time.time() - start
             pct = min(90.0, (elapsed / 60.0) * 100)
             if progress_cb and pct - last_pct >= 5:
@@ -142,24 +146,22 @@ class CreatomateRenderer:
     @staticmethod
     def _download(url: str, dest: Path) -> None:
         dest.parent.mkdir(parents=True, exist_ok=True)
-        with requests.get(url, stream=True, timeout=120) as r:
+        with requests.get(url, stream=True, timeout=180) as r:
             r.raise_for_status()
             with dest.open("wb") as fh:
                 for chunk in r.iter_content(chunk_size=1024 * 64):
                     if chunk:
                         fh.write(chunk)
 
-    # -- composition ---------------------------------------------------
+    # ------------------------------------------------------------------ composition
     def _build_source(self, req: RenderRequest) -> dict:
         elements: list[dict] = []
 
-        # --- Background clips (track 1) ---
+        # --- Background clips on track 1 ------------------------------
         for i, section in enumerate(req.sections):
-            is_video = section.url.lower().endswith(
-                (".mp4", ".mov", ".webm", ".m4v")
-            )
+            trim_start = self._pick_trim_start(section)
             base: dict = {
-                "type": "video" if is_video else "image",
+                "type": "video" if section.is_video else "image",
                 "source": section.url,
                 "track": 1,
                 "time": round(section.time, 3),
@@ -167,85 +169,109 @@ class CreatomateRenderer:
                 "fit": section.fit,
                 "volume": 0,
             }
-            # Gentle Ken-Burns zoom on every section for that pro look.
-            base["animations"] = [{
+            if section.is_video:
+                base["trim_start"] = round(trim_start, 3)
+                base["trim_duration"] = round(section.duration, 3)
+            # Subtle slow zoom on every section.
+            anims = [{
                 "time": "start",
                 "duration": round(section.duration, 3),
                 "easing": "linear",
                 "type": "scale",
                 "scope": "element",
                 "start_scale": "100%",
-                "end_scale": "115%",
+                "end_scale": "112%",
             }]
             # Crossfade between sections.
             if i > 0:
-                base["animations"].append({
-                    "time": "start", "duration": 0.35,
-                    "type": "fade", "easing": "linear",
+                anims.append({
+                    "time": "start",
+                    "duration": 0.3,
+                    "type": "fade",
+                    "easing": "linear",
                 })
+            base["animations"] = anims
             elements.append(base)
 
-        # --- Voice-over (track 2) ---
+        # Darken layer for caption legibility
+        elements.append({
+            "type": "shape",
+            "track": 2,
+            "time": 0,
+            "duration": round(req.duration, 3),
+            "x": "50%", "y": "50%",
+            "width": "100%", "height": "100%",
+            "fill_color": "rgba(0,0,0,0.28)",
+        })
+
+        # --- Voice-over on track 3 ------------------------------------
         elements.append({
             "type": "audio",
             "source": req.voice_url,
-            "track": 2,
+            "track": 3,
             "time": 0,
         })
 
-        # --- Background music (track 3) ---
+        # --- Background music on track 4 ------------------------------
         if req.music_url:
             elements.append({
                 "type": "audio",
                 "source": req.music_url,
-                "track": 3,
+                "track": 4,
                 "time": 0,
-                "duration": req.duration,
-                "volume": "8%",
+                "duration": round(req.duration, 3),
+                "volume": "7%",
                 "audio_fade_in": 0.6,
                 "audio_fade_out": 1.0,
                 "loop": True,
             })
 
-        # --- Word-by-word animated captions (track 4) ---
+        # --- Word-by-word captions on track 5 -------------------------
         for cue in req.word_cues:
-            word = cue.text.strip().upper()
+            word = _clean_caption(cue.text)
             if not word:
                 continue
             start = round(cue.start, 3)
-            dur = max(0.12, round(cue.end - cue.start + 0.04, 3))
-            is_keyword = any(ch for ch in word if ch.isdigit()) or len(word) >= 8
-            fill = req.brand_color if is_keyword else req.text_color
+            dur = max(0.16, round(cue.end - cue.start + 0.06, 3))
+            highlight = _is_highlight(word)
+            fill = req.brand_color if highlight else req.text_color
             elements.append({
                 "type": "text",
-                "text": word,
-                "track": 4,
+                "text": word.upper(),
+                "track": 5,
                 "time": start,
                 "duration": dur,
                 "x": "50%",
-                "y": "72%",
+                "y": "68%",
                 "width": "88%",
-                "height": "20%",
+                "height": "22%",
                 "x_alignment": "50%",
                 "y_alignment": "50%",
                 "font_family": req.font_family,
                 "font_weight": "900",
-                "font_size": "10 vmin",
+                "font_size": "11 vmin" if highlight else "10 vmin",
+                "line_height": "110%",
                 "fill_color": fill,
                 "stroke_color": "#000000",
-                "stroke_width": "0.5 vmin",
+                "stroke_width": "0.55 vmin",
                 "shadow_color": "rgba(0,0,0,0.9)",
                 "shadow_blur": "1 vmin",
-                "shadow_y": "0.3 vmin",
+                "shadow_y": "0.35 vmin",
                 "animations": [
                     {
                         "time": "start",
-                        "duration": 0.18,
+                        "duration": 0.16,
                         "easing": "back-out",
                         "type": "scale",
-                        "start_scale": "55%",
+                        "start_scale": "58%",
                         "end_scale": "100%",
-                    }
+                    },
+                    {
+                        "time": "start",
+                        "duration": 0.12,
+                        "type": "fade",
+                        "easing": "linear",
+                    },
                 ],
             })
 
@@ -257,3 +283,41 @@ class CreatomateRenderer:
             "duration": round(req.duration, 3),
             "elements": elements,
         }
+
+    # ------------------------------------------------------------------ helpers
+    @staticmethod
+    def _pick_trim_start(section: MediaSection) -> float:
+        """Choose an in-point inside the source clip.
+
+        If the source is long enough, start somewhere in the first half to show
+        a different moment each time; otherwise start at 0.
+        """
+        native = section.native_duration or section.duration * 2
+        safe_end = max(0.0, native - section.duration - 0.1)
+        if safe_end <= 0.2:
+            return 0.0
+        return round(random.uniform(0.0, min(safe_end, 3.0)), 3)
+
+
+_CAPTION_RX = re.compile(r"[^\w\-'\s]", flags=re.UNICODE)
+
+
+def _clean_caption(text: str) -> str:
+    t = (text or "").strip()
+    t = _CAPTION_RX.sub("", t)
+    return t.strip()
+
+
+def _is_highlight(word: str) -> bool:
+    """Decide whether this word should get the brand accent colour."""
+    w = word.strip()
+    if not w:
+        return False
+    if any(ch.isdigit() for ch in w):
+        return True
+    if len(w) >= 8:
+        return True
+    return w.upper() in {
+        "NEVER", "ALWAYS", "SECRET", "TRUTH", "STOP", "NOW", "MONEY",
+        "WARNING", "FREE", "BEST", "WORST", "PROVEN", "SCIENCE",
+    }

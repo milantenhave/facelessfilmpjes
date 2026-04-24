@@ -148,14 +148,15 @@ class JobRunner:
         # -- 3. TTS -----------------------------------------------------
         self._set_status(job_id, JobStatus.voicing, 30, "synthesising voice")
         slot = self.paths.video_slot(job_id)
-        voice_ext = ".mp3" if os.getenv("OPENAI_API_KEY") else ".wav"
-        voice_path = slot["audio"].with_suffix(voice_ext)
         voice_override = style.get("voice_id") or None
-        try:
-            voice = self.tts.synthesize(script.full_text, voice_path,
-                                        voice_override=voice_override)
-        except TypeError:
-            voice = self.tts.synthesize(script.full_text, voice_path)
+        voice = self.tts.synthesize(script.full_text, slot["audio"],
+                                    voice_override=voice_override)
+        voice_path = Path(voice.path)
+        if voice.engine.startswith("silence") or voice.engine.startswith("espeak") \
+                or voice.engine.startswith("pyttsx3"):
+            publish_log(job_id,
+                        f"voice fell back to {voice.engine}; output may be low quality",
+                        level="warn")
 
         # -- 4. Media ---------------------------------------------------
         self._set_status(job_id, JobStatus.fetching_media, 45,
@@ -164,9 +165,10 @@ class JobRunner:
         slot["media_dir"].mkdir(parents=True, exist_ok=True)
         seed_keywords = script.keywords or [idea.topic]
         media_clips = []
+        batch = self.media.new_batch()
         for i, sentence in enumerate(sentences):
             clip = self.media.fetch_for_sentence(
-                sentence, seed_keywords, slot["media_dir"], i)
+                sentence, seed_keywords, slot["media_dir"], i, batch=batch)
             media_clips.append(clip)
 
         # -- 5. Subtitle cues ------------------------------------------
@@ -300,7 +302,12 @@ class JobRunner:
         cursor = 0.0
         for clip, span in zip(media_clips, spans):
             url = self._public_url_for_clip(clip)
-            sections.append(MediaSection(url=url, time=cursor, duration=span))
+            native = float(getattr(clip, "native_duration", 0.0) or 0.0)
+            is_video = getattr(clip, "kind", "video") != "image"
+            sections.append(MediaSection(
+                url=url, time=cursor, duration=span,
+                native_duration=native, is_video=is_video,
+            ))
             cursor += span
         return sections
 
