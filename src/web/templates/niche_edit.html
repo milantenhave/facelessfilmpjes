@@ -10,6 +10,14 @@
       <input name="emotions" value="{{ niche.emotions }}">
     </label>
     <label>Language <input name="language" value="{{ niche.language }}"></label>
+    <label>Reading level
+      <select name="reading_level">
+        {% set rl = niche.reading_level or "simple" %}
+        <option value="simple"   {% if rl == "simple"   %}selected{% endif %}>simple — easy English, grade 5</option>
+        <option value="normal"   {% if rl == "normal"   %}selected{% endif %}>normal — grade 8, conversational</option>
+        <option value="advanced" {% if rl == "advanced" %}selected{% endif %}>advanced — grade 12, niche audience</option>
+      </select>
+    </label>
     <label>Video length (s)
       <input name="video_length_seconds" type="number" min="10" max="60"
              value="{{ niche.video_length_seconds }}">

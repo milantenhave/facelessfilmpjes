@@ -7,7 +7,7 @@
   <h2>Existing</h2>
   {% if niches %}
   <table>
-    <thead><tr><th>Name</th><th>Tone</th><th>Emotions</th><th>Lang</th><th>Len (s)</th><th></th></tr></thead>
+    <thead><tr><th>Name</th><th>Tone</th><th>Emotions</th><th>Lang</th><th>Level</th><th>Len (s)</th><th></th></tr></thead>
     <tbody>
     {% for n in niches %}
       <tr>
@@ -15,6 +15,7 @@
         <td>{{ n.tone }}</td>
         <td>{{ n.emotions|join(", ") }}</td>
         <td>{{ n.language }}</td>
+        <td><code>{{ n.reading_level }}</code></td>
         <td>{{ n.video_length_seconds }}</td>
         <td>
           <a class="btn small" href="/niches/{{ n.id }}/edit">Edit</a>
@@ -39,6 +40,13 @@
       <input name="emotions" value="curiosity, motivation, urgency">
     </label>
     <label>Language <input name="language" value="en"></label>
+    <label>Reading level
+      <select name="reading_level">
+        <option value="simple" selected>simple — easy English, grade 5 (default)</option>
+        <option value="normal">normal — grade 8, conversational</option>
+        <option value="advanced">advanced — grade 12, niche audience</option>
+      </select>
+    </label>
     <label>Video length (s) <input name="video_length_seconds" type="number" value="25" min="10" max="60"></label>
     <label class="full">Description
       <textarea name="description" rows="2" placeholder="One-liner describing the vibe"></textarea>

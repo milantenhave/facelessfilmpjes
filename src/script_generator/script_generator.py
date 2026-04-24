@@ -24,8 +24,8 @@ The HOOK (first 2 seconds) is life or death. Make it:
   the one thing…", "This cost me…", "You are doing ___ wrong"
 - Never "Hey guys", "Did you know", "In today's video", "Hi, I'm…"
 
-BODY: 2–3 sentences, each <= 14 words. Deliver ONE concrete insight with
-proof (study, stat, analogy, tiny story). No vague motivational fluff.
+BODY: 2–3 sentences delivering ONE concrete insight with proof
+(study, stat, analogy, tiny story). No vague motivational fluff.
 
 PAYOFF: 1 sentence that reframes the insight as a micro-action the viewer
 can take TODAY.
@@ -33,8 +33,7 @@ can take TODAY.
 CTA: <= 7 words. One of: Follow, Save, Comment "YES", Share this.
 
 Rules across the board:
-- Total length 55–85 words. Count words.
-- Spoken English, contractions fine, no corporate register.
+- Spoken register. Contractions fine. No corporate tone.
 - Zero emojis, zero stage directions, zero brackets, zero asterisks.
 - `script` = hook + body + payoff + cta, joined by single spaces. That is
   exactly what the voice-over reads.
@@ -42,6 +41,35 @@ Rules across the board:
   something a camera can film (e.g. "running shoes", "stock chart",
   "city skyline at night"). Never abstract ("success", "mindset").
 """
+
+
+READING_LEVEL_HINTS = {
+    "simple": (
+        "READING LEVEL: very simple (US grade 5 / CEFR A2-B1). "
+        "Use ONLY everyday words a 10-year-old or a non-native speaker knows. "
+        "Sentences of 6–10 words, one idea each. "
+        "No jargon, no metaphors longer than 3 words, no abstractions. "
+        "Prefer concrete nouns, action verbs, and direct commands. "
+        "If a technical term is unavoidable, explain it right after in "
+        "plain words. Target total 45–70 spoken words."
+    ),
+    "normal": (
+        "READING LEVEL: clear conversational (US grade 8 / CEFR B1-B2). "
+        "Common vocabulary, 10–14 words per sentence. "
+        "Light metaphors allowed. Explain any niche term in one clause. "
+        "Target total 55–80 spoken words."
+    ),
+    "advanced": (
+        "READING LEVEL: confident adult (US grade 11+ / CEFR B2-C1). "
+        "Technical and domain vocabulary is fine — the audience is already "
+        "in the niche. Sentences up to 16 words. Target total 70–95 words."
+    ),
+}
+
+
+def reading_level_hint(level: str) -> str:
+    key = (level or "simple").strip().lower()
+    return READING_LEVEL_HINTS.get(key, READING_LEVEL_HINTS["simple"])
 
 
 @dataclass
@@ -82,8 +110,17 @@ class ScriptGenerator:
         self.llm = llm
         self.cfg = cfg
         self.target_seconds = int(cfg.get("video_length_seconds", 25))
+        self.reading_level = (cfg.get("reading_level")
+                              or "simple").strip().lower()
+        self.prompt_additions = (cfg.get("prompt_additions") or "").strip()
 
     def run(self, idea: Idea, variant: str = "A") -> Script | None:
+        extra = f"\n\n{self.prompt_additions}" if self.prompt_additions else ""
+        system = (
+            SCRIPT_SYSTEM
+            + "\n\n" + reading_level_hint(self.reading_level)
+            + extra
+        )
         user = (
             f"hook_seed=\"{idea.hook}\"\n"
             f"topic=\"{idea.topic}\"\n"
@@ -93,10 +130,11 @@ class ScriptGenerator:
             f"angle=\"{idea.angle}\"\n"
             f"variant=\"{variant}\"\n"
             f"target_seconds={self.target_seconds}\n"
+            f"reading_level={self.reading_level}\n"
             f"language={self.cfg.get('language', 'en')}"
         )
         try:
-            resp = self.llm.complete(SCRIPT_SYSTEM, user)
+            resp = self.llm.complete(system, user)
             data = json.loads(resp.text)
         except Exception as exc:   # noqa: BLE001
             log.error("script generation failed for idea %r: %s", idea.hook, exc)

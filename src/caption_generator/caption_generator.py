@@ -37,19 +37,29 @@ class CaptionGenerator:
         self.llm = llm
         self.target_tags = int(cfg.get("captions", {}).get("hashtags_count", 12))
         self.include_cta = bool(cfg.get("captions", {}).get("include_cta", True))
+        self.reading_level = (cfg.get("reading_level")
+                              or "simple").strip().lower()
 
     def run(self, script: Script) -> Caption:
+        level_hint = {
+            "simple":   "Keep title and description in very simple words a "
+                        "10-year-old or non-native speaker understands.",
+            "normal":   "Conversational, everyday language.",
+            "advanced": "Confident adult register, domain vocabulary allowed.",
+        }.get(self.reading_level, "Keep title and description simple.")
+        system = CAPTION_SYSTEM + "\n" + level_hint
         user = (
             f"topic=\"{script.idea.topic}\"\n"
             f"niche=\"{script.idea.niche}\"\n"
             f"emotion=\"{script.idea.emotion}\"\n"
             f"hook=\"{script.hook}\"\n"
+            f"reading_level={self.reading_level}\n"
             f"hashtags_count={self.target_tags}\n"
             f"include_cta={'true' if self.include_cta else 'false'}\n"
             f"script=\"{script.full_text[:400]}\""
         )
         try:
-            resp = self.llm.complete(CAPTION_SYSTEM, user)
+            resp = self.llm.complete(system, user)
             data = json.loads(resp.text)
         except Exception as exc:   # noqa: BLE001
             log.warning("caption generation failed (%s) — falling back.", exc)

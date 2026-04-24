@@ -70,7 +70,7 @@ def seed_cmd() -> None:
         if existing:
             click.echo("already seeded.")
             return
-        s.add(Niche(
+        niche = Niche(
             name="self_improvement", tone="motivational",
             emotions=["curiosity", "motivation", "urgency"],
             language="en", video_length_seconds=25,
@@ -79,7 +79,9 @@ def seed_cmd() -> None:
                 "Cite a research finding or counter-intuitive stat in the body. "
                 "Avoid generic hype and cliches."
             ),
-        ))
+        )
+        niche.reading_level = "simple"
+        s.add(niche)
     click.echo("seeded niche: self_improvement")
 
 

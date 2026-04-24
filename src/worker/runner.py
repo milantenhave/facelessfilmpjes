@@ -124,6 +124,8 @@ class JobRunner:
                 "emotions": list(niche.emotions or []),
                 "language": niche.language,
                 "video_length_seconds": niche.video_length_seconds,
+                "reading_level": getattr(niche, "reading_level", "simple")
+                    or "simple",
                 "prompt_additions": niche.prompt_additions or "",
             }
 
@@ -132,10 +134,15 @@ class JobRunner:
         publish_log(job_id, f"idea: {idea.hook}")
 
         # -- 2. Script --------------------------------------------------
-        self._set_status(job_id, JobStatus.scripting, 15, "writing script")
-        script_cfg = {**self.cfg, "video_length_seconds":
-                      niche_snapshot["video_length_seconds"],
-                      "language": niche_snapshot["language"]}
+        self._set_status(job_id, JobStatus.scripting, 15,
+                         f"writing script (level={niche_snapshot['reading_level']})")
+        script_cfg = {
+            **self.cfg,
+            "video_length_seconds": niche_snapshot["video_length_seconds"],
+            "language": niche_snapshot["language"],
+            "reading_level": niche_snapshot["reading_level"],
+            "prompt_additions": niche_snapshot["prompt_additions"],
+        }
         script = ScriptGenerator(self.llm, script_cfg).run(idea)
         if not script or not script.full_text:
             raise RuntimeError("script generation produced empty output")
@@ -260,7 +267,9 @@ class JobRunner:
 
         # -- 7. Caption -------------------------------------------------
         self._set_status(job_id, JobStatus.uploading, 88, "writing caption")
-        caption = CaptionGenerator(self.llm, self.cfg).run(script)
+        caption_cfg = {**self.cfg,
+                       "reading_level": niche_snapshot["reading_level"]}
+        caption = CaptionGenerator(self.llm, caption_cfg).run(script)
         with session_scope() as s:
             job = s.get(Job, job_id)
             job.caption = caption.to_dict()
@@ -313,6 +322,7 @@ class JobRunner:
             "niches": [{
                 "name": niche["name"], "tone": niche["tone"],
                 "emotions": niche["emotions"], "weight": 1,
+                "reading_level": niche.get("reading_level", "simple"),
             }],
             "ideas_per_niche": 6,
             "language": niche["language"],
