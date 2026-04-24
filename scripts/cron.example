@@ -1,0 +1,6 @@
+# Example crontab entry for a VPS.
+# 1. Install: crontab -e  (or copy below into /etc/cron.d/facelessfilmpjes)
+# 2. Edit paths to match your install.
+#
+# Run once every day at 09:00 UTC
+0 9 * * * cd /opt/facelessfilmpjes && /opt/facelessfilmpjes/.venv/bin/python -m src run >> logs/cron.log 2>&1

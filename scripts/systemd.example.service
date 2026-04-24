@@ -1,0 +1,16 @@
+[Unit]
+Description=facelessfilmpjes video pipeline
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/facelessfilmpjes
+Environment=PYTHONUNBUFFERED=1
+ExecStart=/opt/facelessfilmpjes/.venv/bin/python -m src schedule
+Restart=on-failure
+RestartSec=30
+User=faceless
+
+[Install]
+WantedBy=multi-user.target
