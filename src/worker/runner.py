@@ -165,8 +165,12 @@ class JobRunner:
                         level="warn")
 
         # -- 4. Media ---------------------------------------------------
-        self._set_status(job_id, JobStatus.fetching_media, 45,
-                         "fetching stock footage")
+        visual_mode = style.get("visual_mode", "stock")
+        image_style = style.get("image_style") or None
+        self._set_status(
+            job_id, JobStatus.fetching_media, 45,
+            f"fetching visuals ({visual_mode})",
+        )
         sentences = script.sentences or split_sentences(script.full_text)
         slot["media_dir"].mkdir(parents=True, exist_ok=True)
         seed_keywords = script.keywords or [idea.topic]
@@ -174,7 +178,11 @@ class JobRunner:
         batch = self.media.new_batch()
         for i, sentence in enumerate(sentences):
             clip = self.media.fetch_for_sentence(
-                sentence, seed_keywords, slot["media_dir"], i, batch=batch)
+                sentence, seed_keywords, slot["media_dir"], i,
+                batch=batch,
+                visual_mode=visual_mode,
+                image_style=image_style,
+            )
             media_clips.append(clip)
 
         # -- 5. Subtitle cues ------------------------------------------
@@ -195,6 +203,18 @@ class JobRunner:
         word_cues = [SubtitleCue(start=c.start, end=c.end, text=c.text)
                      for c in cues if c.text.strip()]
 
+        # Hook sticker: big static text over the first sentence duration.
+        hook_text = script.hook or ""
+        hook_duration = 0.0
+        if hook_text and sentences:
+            hook_words = len(sentences[0].split())
+            if word_cues and hook_words:
+                # Use timing from whisper for precision
+                first_cues = word_cues[:min(hook_words + 2, len(word_cues))]
+                hook_duration = max(0.0, first_cues[-1].end - first_cues[0].start)
+            else:
+                hook_duration = min(3.0, total_duration * 0.4)
+
         request = RenderRequest(
             width=self.cfg["video"]["resolution"][0],
             height=self.cfg["video"]["resolution"][1],
@@ -207,6 +227,8 @@ class JobRunner:
             brand_color=style.get("accent_color", "#FFD400"),
             text_color=style.get("text_color", "#FFFFFF"),
             font_family=style.get("font_family", "Montserrat"),
+            hook_text=hook_text,
+            hook_duration=hook_duration,
         )
 
         if self.renderer.available():

@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}Edit channel — {{ channel.name }}{% endblock %}
+{% block content %}
+<h1>Edit channel</h1>
+<section class="card">
+  <form method="post" action="/channels/{{ channel.id }}/edit" class="grid">
+    <label>Name <input name="name" value="{{ channel.name }}" required></label>
+    <label>Platform
+      <select name="platform">
+        {% for p in platforms %}
+        <option value="{{ p }}" {% if p == channel.platform %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Niche
+      <select name="niche_id" required>
+        {% for n in niches %}
+        <option value="{{ n.id }}" {% if n.id == channel.niche_id %}selected{% endif %}>{{ n.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Voice
+      <div class="row">
+        <select name="voice_id" id="voice_id">
+          {% set v = channel.style.voice_id or "nova" %}
+          {% for opt in ["nova","shimmer","alloy","echo","fable","onyx","ash","sage","verse"] %}
+          <option value="{{ opt }}" {% if opt == v %}selected{% endif %}>{{ opt }}</option>
+          {% endfor %}
+        </select>
+        <button type="button" class="small" id="preview-voice">▶ preview</button>
+        <audio id="voice-audio" controls style="display:none; max-width: 220px;"></audio>
+      </div>
+    </label>
+    <label>Accent color
+      <input name="accent_color" type="color"
+             value="{{ channel.style.accent_color or '#FFD400' }}">
+    </label>
+    <label>Font family
+      <input name="font_family" value="{{ channel.style.font_family or 'Montserrat' }}">
+    </label>
+    <label>Visual mode
+      <select name="visual_mode">
+        {% set vm = channel.style.visual_mode or "stock" %}
+        <option value="stock" {% if vm == "stock" %}selected{% endif %}>stock — free (Pexels + Pixabay)</option>
+        <option value="ai_images" {% if vm == "ai_images" %}selected{% endif %}>ai_images — DALL·E per sentence (~€0.04 ea)</option>
+        <option value="mixed" {% if vm == "mixed" %}selected{% endif %}>mixed — alternates AI + stock</option>
+      </select>
+    </label>
+    <label>AI image style (only for ai_images/mixed)
+      <input name="image_style"
+             value="{{ channel.style.image_style or '' }}"
+             placeholder="cinematic photorealistic, 35mm film">
+    </label>
+    <label>YouTube privacy
+      <select name="privacy">
+        {% set pv = channel.upload_defaults.privacy or "public" %}
+        <option value="public"   {% if pv == "public" %}selected{% endif %}>public</option>
+        <option value="unlisted" {% if pv == "unlisted" %}selected{% endif %}>unlisted</option>
+        <option value="private"  {% if pv == "private" %}selected{% endif %}>private</option>
+      </select>
+    </label>
+    <label><input type="checkbox" name="active" {% if channel.active %}checked{% endif %}> Active</label>
+    <div class="full row">
+      <button type="submit">Save changes</button>
+      <a class="btn small" href="/channels" style="background:#333;color:#eee">Cancel</a>
+    </div>
+  </form>
+</section>
+
+<script>
+(function(){
+  const btn = document.getElementById('preview-voice');
+  if (!btn) return;
+  btn.addEventListener('click', async () => {
+    const voice = document.getElementById('voice_id').value;
+    const audio = document.getElementById('voice-audio');
+    btn.disabled = true;
+    btn.textContent = '… loading';
+    try {
+      audio.src = `/api/voice/sample?voice=${encodeURIComponent(voice)}`;
+      audio.style.display = 'inline-block';
+      await audio.play();
+    } catch(e) { alert('voice preview failed: ' + e.message); }
+    finally { btn.disabled = false; btn.textContent = '▶ preview'; }
+  });
+})();
+</script>
+{% endblock %}

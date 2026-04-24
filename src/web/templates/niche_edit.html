@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Edit niche — {{ niche.name }}{% endblock %}
+{% block content %}
+<h1>Edit niche</h1>
+<section class="card">
+  <form method="post" action="/niches/{{ niche.id }}/edit" class="grid">
+    <label>Name <input name="name" value="{{ niche.name }}" required></label>
+    <label>Tone <input name="tone" value="{{ niche.tone }}"></label>
+    <label>Emotions (comma-sep)
+      <input name="emotions" value="{{ niche.emotions }}">
+    </label>
+    <label>Language <input name="language" value="{{ niche.language }}"></label>
+    <label>Video length (s)
+      <input name="video_length_seconds" type="number" min="10" max="60"
+             value="{{ niche.video_length_seconds }}">
+    </label>
+    <label class="full">Description
+      <textarea name="description" rows="2">{{ niche.description }}</textarea>
+    </label>
+    <label class="full">Extra LLM instructions
+      <textarea name="prompt_additions" rows="4">{{ niche.prompt_additions }}</textarea>
+    </label>
+    <div class="full row">
+      <button type="submit">Save changes</button>
+      <a class="btn small" href="/niches" style="background:#333;color:#eee">Cancel</a>
+    </div>
+  </form>
+</section>
+{% endblock %}

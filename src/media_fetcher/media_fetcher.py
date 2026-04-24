@@ -92,12 +92,50 @@ class MediaFetcher:
         return MediaBatch()
 
     # ------------------------------------------------------------------
-    def fetch_for_sentence(self, sentence: str, seed_keywords: list[str],
-                           out_dir: Path, index: int,
-                           batch: MediaBatch | None = None) -> MediaClip:
+    def fetch_for_sentence(
+        self,
+        sentence: str,
+        seed_keywords: list[str],
+        out_dir: Path,
+        index: int,
+        batch: MediaBatch | None = None,
+        *,
+        visual_mode: str = "stock",
+        image_style: str | None = None,
+    ) -> MediaClip:
+        """Fetch or generate a visual for one sentence.
+
+        visual_mode:
+            "stock"     — Pexels / Pixabay only (default, free)
+            "ai_images" — OpenAI DALL-E per sentence (paid, most relevant)
+            "mixed"     — alternate: AI for short sentences, stock otherwise
+        """
         out_dir.mkdir(parents=True, exist_ok=True)
         batch = batch or MediaBatch()
 
+        use_ai = visual_mode == "ai_images" or (
+            visual_mode == "mixed" and (index % 2 == 0)
+        )
+
+        if use_ai:
+            clip = self._openai_image(sentence, out_dir, index, image_style)
+            if clip:
+                return clip
+            log.info("AI image unavailable for sentence %d — "
+                     "falling back to stock.", index)
+
+        return self._stock_for_sentence(sentence, seed_keywords, out_dir,
+                                        index, batch)
+
+    # ------------------------------------------------------------------
+    def _stock_for_sentence(
+        self,
+        sentence: str,
+        seed_keywords: list[str],
+        out_dir: Path,
+        index: int,
+        batch: MediaBatch,
+    ) -> MediaClip:
         primary_kw = extract_keywords(sentence, extra=None, limit=2)
         fallback_kw = [k.lower() for k in (seed_keywords or [])][:2] or \
                       ["cinematic", "lifestyle"]
@@ -109,7 +147,6 @@ class MediaFetcher:
             random.choice(fallback_kw),
             "cinematic abstract",
         ]
-        # Dedupe preserving order
         queries = list(dict.fromkeys(q for q in queries if q))
 
         for query in queries:
@@ -129,6 +166,28 @@ class MediaFetcher:
         log.info("no remote media match — using colour fallback for sentence %d.",
                  index)
         return self._color_fallback(out_dir, index, " ".join(primary_kw))
+
+    def _openai_image(self, sentence: str, out_dir: Path, index: int,
+                      style_override: str | None) -> MediaClip | None:
+        try:
+            from .openai_images import OpenAIImages
+        except Exception:   # noqa: BLE001
+            return None
+        provider = OpenAIImages()
+        if not provider.available():
+            return None
+        try:
+            target_path = out_dir / f"clip_{index:02d}_ai.png"
+            provider.generate(sentence, target_path,
+                              style_override=style_override)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("AI image generation failed (%s) — falling back.", exc)
+            return None
+        return MediaClip(
+            path=target_path, kind="image",
+            duration=None, source="openai_image",
+            query=sentence[:80],
+        )
 
     # ------------------------------------------------------------------ providers
     @retry(stop=stop_after_attempt(2),
