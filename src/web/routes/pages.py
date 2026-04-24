@@ -94,6 +94,7 @@ async def channels_create(
     platform: str = Form(...),
     niche_id: int = Form(...),
     voice_id: str = Form("nova"),
+    voice_speed: float = Form(1.0),
     accent_color: str = Form("#FFD400"),
     font_family: str = Form("Montserrat"),
     visual_mode: str = Form("stock"),
@@ -106,6 +107,7 @@ async def channels_create(
             niche_id=niche_id,
             style={
                 "voice_id": voice_id,
+                "voice_speed": max(0.5, min(2.0, float(voice_speed or 1.0))),
                 "accent_color": accent_color,
                 "text_color": "#FFFFFF",
                 "font_family": font_family,
@@ -159,6 +161,7 @@ async def channel_edit_post(
     platform: str = Form(...),
     niche_id: int = Form(...),
     voice_id: str = Form("nova"),
+    voice_speed: float = Form(1.0),
     accent_color: str = Form("#FFD400"),
     font_family: str = Form("Montserrat"),
     visual_mode: str = Form("stock"),
@@ -177,6 +180,7 @@ async def channel_edit_post(
         style = dict(c.style or {})
         style.update({
             "voice_id": voice_id,
+            "voice_speed": max(0.5, min(2.0, float(voice_speed or 1.0))),
             "accent_color": accent_color,
             "text_color": "#FFFFFF",
             "font_family": font_family,

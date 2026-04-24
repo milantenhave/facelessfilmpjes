@@ -156,73 +156,58 @@ class CreatomateRenderer:
                         fh.write(chunk)
 
     # ------------------------------------------------------------------ composition
-    CROSSFADE = 0.4   # seconds of overlap between consecutive clips
+    CROSSFADE = 0.35   # seconds of crossfade duration
 
     def _build_source(self, req: RenderRequest) -> dict:
         elements: list[dict] = []
 
-        # --- Background clips with CROSSFADE --------------------------
-        # Clips alternate between track 1 and track 2 so they can overlap
-        # in time without one wiping the other. During the overlap window
-        # the new clip fades in from 0→100% on top of the previous clip
-        # that is still fully visible underneath → smooth crossfade.
+        # --- Background clips with NATIVE crossfades ------------------
+        # All sections live on the same track and play sequentially, with
+        # no manual time overlap. The `transition: true` flag on the
+        # incoming clip tells Creatomate to overlap+crossfade automatically —
+        # no black frame between cuts, ever.
         xf = self.CROSSFADE
-        n = len(req.sections)
         for i, section in enumerate(req.sections):
             trim_start = self._pick_trim_start(section)
-            prev_overlap = xf if i > 0 else 0.0
-            next_overlap = xf if i < n - 1 else 0.0
-
-            start_time = max(0.0, section.time - prev_overlap)
-            end_time = section.time + section.duration + next_overlap
-            total_duration = end_time - start_time
-
-            track = 1 + (i % 2)       # alternates 1, 2, 1, 2, ...
             base: dict = {
                 "type": "video" if section.is_video else "image",
                 "source": section.url,
-                "track": track,
-                "time": round(start_time, 3),
-                "duration": round(total_duration, 3),
+                "track": 1,
+                "duration": round(section.duration, 3),
                 "fit": section.fit,
                 "volume": 0,
             }
+            # Only the FIRST section uses absolute time. Subsequent ones
+            # flow naturally on track 1 with crossfade overlap.
+            if i == 0:
+                base["time"] = round(section.time, 3)
             if section.is_video:
                 base["trim_start"] = round(trim_start, 3)
-                base["trim_duration"] = round(total_duration, 3)
+                base["trim_duration"] = round(section.duration, 3)
 
             anims: list[dict] = [{
-                # Gentle Ken Burns zoom across the whole section
-                "time": "start",
-                "duration": round(total_duration, 3),
-                "easing": "linear",
+                # Ken Burns zoom across the whole section
                 "type": "scale",
+                "time": "start",
+                "duration": "end",
+                "easing": "linear",
                 "scope": "element",
                 "start_scale": "100%",
                 "end_scale": "114%",
             }]
-            if prev_overlap > 0:
+            if i > 0:
                 anims.append({
-                    "time": "start",
-                    "duration": round(prev_overlap, 3),
                     "type": "fade",
-                    "easing": "linear",
-                })
-            if next_overlap > 0:
-                anims.append({
-                    "time": "end",
-                    "duration": round(next_overlap, 3),
-                    "type": "fade",
-                    "easing": "linear",
-                    "reversed": True,
+                    "transition": True,
+                    "duration": round(xf, 3),
                 })
             base["animations"] = anims
             elements.append(base)
 
-        # --- Darken layer for caption legibility (track 3) -------------
+        # --- Darken layer for caption legibility (track 2) -------------
         elements.append({
             "type": "shape",
-            "track": 3,
+            "track": 2,
             "time": 0,
             "duration": round(req.duration, 3),
             "x": "50%", "y": "50%",
@@ -230,20 +215,20 @@ class CreatomateRenderer:
             "fill_color": "rgba(0,0,0,0.28)",
         })
 
-        # --- Voice-over on track 4 ------------------------------------
+        # --- Voice-over on track 3 ------------------------------------
         elements.append({
             "type": "audio",
             "source": req.voice_url,
-            "track": 4,
+            "track": 3,
             "time": 0,
         })
 
-        # --- Background music on track 5 ------------------------------
+        # --- Background music on track 4 ------------------------------
         if req.music_url:
             elements.append({
                 "type": "audio",
                 "source": req.music_url,
-                "track": 5,
+                "track": 4,
                 "time": 0,
                 "duration": round(req.duration, 3),
                 "volume": "7%",
@@ -252,12 +237,12 @@ class CreatomateRenderer:
                 "loop": True,
             })
 
-        # --- Hook sticker on track 6 (big static text for scroll-stop) -
+        # --- Hook sticker on track 5 (big static text for scroll-stop) -
         if req.hook_text and req.hook_duration > 0.2:
             elements.append({
                 "type": "text",
                 "text": req.hook_text.strip().upper(),
-                "track": 6,
+                "track": 5,
                 "time": 0,
                 "duration": round(req.hook_duration, 3),
                 "x": "50%", "y": "22%",
@@ -286,7 +271,7 @@ class CreatomateRenderer:
                 ],
             })
 
-        # --- Word-by-word captions on track 7 -------------------------
+        # --- Word-by-word captions on track 6 -------------------------
         for cue in req.word_cues:
             word = _clean_caption(cue.text)
             if not word:
@@ -298,7 +283,7 @@ class CreatomateRenderer:
             elements.append({
                 "type": "text",
                 "text": word.upper(),
-                "track": 7,
+                "track": 6,
                 "time": start,
                 "duration": dur,
                 "x": "50%",
