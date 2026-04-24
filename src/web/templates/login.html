@@ -1,0 +1,14 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Login — facelessfilmpjes</title>
+<link rel="stylesheet" href="/static/app.css"></head>
+<body class="centered">
+  <form class="card login-card" method="post" action="/login">
+    <h1>facelessfilmpjes</h1>
+    {% if error %}<div class="error">{{ error }}</div>{% endif %}
+    <label>Password
+      <input name="password" type="password" autofocus required>
+    </label>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button type="submit">Sign in</button>
+  </form>
+</body></html>

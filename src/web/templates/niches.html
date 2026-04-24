@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Niches{% endblock %}
+{% block content %}
+<h1>Niches</h1>
+
+<section class="card">
+  <h2>Existing</h2>
+  {% if niches %}
+  <table>
+    <thead><tr><th>Name</th><th>Tone</th><th>Emotions</th><th>Lang</th><th>Len (s)</th><th></th></tr></thead>
+    <tbody>
+    {% for n in niches %}
+      <tr>
+        <td>{{ n.name }}</td>
+        <td>{{ n.tone }}</td>
+        <td>{{ n.emotions|join(", ") }}</td>
+        <td>{{ n.language }}</td>
+        <td>{{ n.video_length_seconds }}</td>
+        <td>
+          <form method="post" action="/niches/{{ n.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete niche {{ n.name }}?');">
+            <button class="small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No niches yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Add niche</h2>
+  <form method="post" action="/niches" class="grid">
+    <label>Name <input name="name" required placeholder="e.g. self_improvement"></label>
+    <label>Tone <input name="tone" value="motivational"></label>
+    <label>Emotions (comma-sep)
+      <input name="emotions" value="curiosity, motivation, urgency">
+    </label>
+    <label>Language <input name="language" value="en"></label>
+    <label>Video length (s) <input name="video_length_seconds" type="number" value="25" min="10" max="60"></label>
+    <label class="full">Description
+      <textarea name="description" rows="2" placeholder="One-liner describing the vibe"></textarea>
+    </label>
+    <label class="full">Extra LLM instructions
+      <textarea name="prompt_additions" rows="3"
+                placeholder="e.g. 'always cite a scientific study in the body, no generic hype'"></textarea>
+    </label>
+    <button type="submit">Create niche</button>
+  </form>
+</section>
+{% endblock %}

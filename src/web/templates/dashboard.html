@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h1>Dashboard</h1>
+
+<section class="card">
+  <h2>Channels</h2>
+  {% if channels %}
+  <table>
+    <thead><tr><th>Name</th><th>Platform</th><th>Niche</th><th>Connected</th><th>Active</th><th></th></tr></thead>
+    <tbody>
+    {% for c in channels %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.platform }}</td>
+        <td>{{ c.niche }}</td>
+        <td>{{ "✓" if c.connected else "—" }}</td>
+        <td>{{ "✓" if c.active else "off" }}</td>
+        <td>
+          <form method="post" action="/channels/{{ c.id }}/run-now" style="display:inline">
+            <button class="small">Run now</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>No channels yet. <a href="/channels">Create one</a>.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Running jobs</h2>
+  {% if running_jobs %}
+  <table class="jobs">
+    <thead><tr><th>#</th><th>Channel</th><th>Status</th><th>Progress</th><th>Detail</th></tr></thead>
+    <tbody>
+    {% for j in running_jobs %}
+      <tr data-job-id="{{ j.id }}" data-status="{{ j.status }}">
+        <td>#{{ j.id }}</td>
+        <td>{{ j.channel }}</td>
+        <td class="col-status">{{ j.status }}</td>
+        <td><div class="bar"><div class="bar-fill" style="width: {{ j.progress }}%"></div></div></td>
+        <td class="col-detail">{{ j.detail }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+    <p>Idle. Jobs will appear here when a schedule fires or you click “Run now”.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Recent jobs</h2>
+  {% if recent_jobs %}
+  <table class="jobs">
+    <thead><tr><th>#</th><th>Channel</th><th>Status</th><th>Hook</th><th>Published</th></tr></thead>
+    <tbody>
+    {% for j in recent_jobs %}
+      <tr data-job-id="{{ j.id }}" data-status="{{ j.status }}">
+        <td>#{{ j.id }}</td>
+        <td>{{ j.channel }}</td>
+        <td class="col-status">{{ j.status }}</td>
+        <td class="hook">{{ j.idea_hook }}</td>
+        <td>
+          {% if j.video_url %}<a href="{{ j.video_url }}" target="_blank">open ↗</a>{% else %}—{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,94 @@
+# ===========================================================================
+# facelessfilmpjes - example configuration
+# Copy to config/config.yaml and edit to taste.
+# ===========================================================================
+
+project:
+  name: facelessfilmpjes
+  output_dir: ./videos
+  cache_dir: ./.cache
+  log_dir: ./logs
+
+# --- Content strategy --------------------------------------------------
+niches:
+  - name: self_improvement
+    tone: motivational
+    emotions: [curiosity, motivation, inspiration]
+    weight: 3
+  - name: finance
+    tone: authoritative
+    emotions: [fear, curiosity, urgency]
+    weight: 2
+  - name: weird_facts
+    tone: playful
+    emotions: [surprise, curiosity]
+    weight: 2
+
+language: en
+videos_per_run: 3          # how many finished videos per scheduler tick
+ideas_per_niche: 8         # ideas generated per niche per run
+video_length_seconds: 25   # target script length
+posting_frequency: daily   # daily | hourly | manual
+
+# --- LLM ---------------------------------------------------------------
+llm:
+  provider: template       # template | openai | anthropic | ollama
+  temperature: 0.9
+  max_tokens: 800
+
+# --- TTS ---------------------------------------------------------------
+tts:
+  engine: pyttsx3          # pyttsx3 | coqui | espeak
+  voice: default
+  rate: 175                # words-per-minute (pyttsx3/espeak)
+  speed: 1.0               # coqui speed factor
+
+# --- Media -------------------------------------------------------------
+media:
+  providers: [pexels, pixabay]
+  per_sentence: 1
+  orientation: portrait
+  min_duration_s: 3
+  fallback_color: "#101010"
+
+# --- Video -------------------------------------------------------------
+video:
+  resolution: [1080, 1920] # 9:16
+  fps: 30
+  crf: 20                  # lower = better quality, 18-23 is a good range
+  background_music: null   # path to a free-to-use mp3, or null
+  music_volume: 0.08
+  transitions: fade        # fade | cut | slide
+  zoom_pan: true           # Ken Burns effect on still images
+
+# --- Subtitles ---------------------------------------------------------
+subtitles:
+  enabled: true
+  mode: word               # word | sentence
+  font: DejaVuSans-Bold
+  font_size: 72
+  color: "#FFFFFF"
+  stroke_color: "#000000"
+  stroke_width: 6
+  position: center
+  highlight_color: "#FFD400"
+
+# --- Captions / metadata ----------------------------------------------
+captions:
+  hashtags_count: 12
+  include_cta: true
+
+# --- A/B testing for hooks --------------------------------------------
+ab_testing:
+  enabled: true
+  variants_per_idea: 2
+
+# --- Uploader ---------------------------------------------------------
+uploader:
+  dry_run: true            # prepare only, do not publish
+  platforms: [tiktok, instagram, youtube]
+
+# --- Analytics --------------------------------------------------------
+analytics:
+  db_path: ./analytics.db
+  feedback_loop: true      # feed winning patterns back into idea/script generation
