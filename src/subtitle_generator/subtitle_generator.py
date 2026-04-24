@@ -1,12 +1,14 @@
-"""Generate SRT subtitles from a script + synthesized audio.
+"""Generate SRT subtitles + word-level cues from the generated voice-over.
 
-Uses Whisper for word-level timing when available; otherwise falls back to
-evenly-distributing words across the audio's known duration. The fallback path
-is essential because Whisper is a heavy dependency and may not be installed on
-a minimal VPS.
+Strategy:
+    1. OpenAI Whisper API (best quality, $0.003/30s) — default when
+       OPENAI_API_KEY is set.
+    2. Local openai-whisper tiny model (if installed) — free but heavy on RAM.
+    3. Even-split fallback — always works, used as a safety net.
 """
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from datetime import timedelta
 from pathlib import Path
@@ -14,6 +16,7 @@ from pathlib import Path
 from ..script_generator import Script
 from ..utils.logger import get_logger
 from ..voice_generator import VoiceClip
+from .openai_whisper_api import OpenAIWhisperAPI
 
 log = get_logger(__name__)
 
@@ -49,81 +52,96 @@ class SubtitleGenerator:
         sub = cfg.get("subtitles", {})
         self.enabled = bool(sub.get("enabled", True))
         self.mode = sub.get("mode", "word")  # word | sentence
+        self.language = cfg.get("language", "en")
+        self.whisper_api = OpenAIWhisperAPI() \
+            if os.getenv("OPENAI_API_KEY") else None
 
-    def run(self, script: Script, voice: VoiceClip, out_path: Path) -> list[SubtitleCue]:
+    def run(self, script: Script, voice: VoiceClip,
+            out_path: Path) -> list[SubtitleCue]:
         if not self.enabled:
             out_path.write_text("", "utf-8")
             return []
 
-        cues = self._whisper_align(script, voice) or self._even_align(script, voice)
+        cues = (
+            self._openai_whisper(voice)
+            or self._local_whisper(voice)
+            or self._even_align(script, voice)
+        )
+        if self.mode == "sentence":
+            cues = self._group_into_sentences(cues)
+
         out_path.parent.mkdir(parents=True, exist_ok=True)
         out_path.write_text(cues_to_srt(cues), "utf-8")
         log.info("generated %d subtitle cues (%s) -> %s",
                  len(cues), self.mode, out_path)
         return cues
 
-    # -- aligners -------------------------------------------------------
-    def _whisper_align(self, script: Script, voice: VoiceClip) -> list[SubtitleCue]:
+    # ------------------------------------------------------------------ aligners
+    def _openai_whisper(self, voice: VoiceClip) -> list[SubtitleCue]:
+        if not self.whisper_api or not self.whisper_api.available():
+            return []
+        try:
+            words = self.whisper_api.word_timestamps(
+                Path(voice.path), language=self.language)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("OpenAI Whisper API failed (%s) — trying next.", exc)
+            return []
+        return [SubtitleCue(s, e, t) for s, e, t in words]
+
+    def _local_whisper(self, voice: VoiceClip) -> list[SubtitleCue]:
         try:
             import whisper  # type: ignore
-        except Exception as exc:   # noqa: BLE001
-            log.info("whisper not available (%s); using even alignment.", exc)
+        except Exception:   # noqa: BLE001
             return []
         try:
             model = whisper.load_model("tiny")
-            result = model.transcribe(str(voice.path), word_timestamps=True,
-                                      fp16=False, verbose=False)
-        except Exception as exc:   # noqa: BLE001
-            log.warning("whisper failed (%s); using even alignment.", exc)
+            result = model.transcribe(str(voice.path),
+                                      word_timestamps=True,
+                                      fp16=False, verbose=False,
+                                      language=self.language)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("local whisper failed (%s).", exc)
             return []
 
-        words: list[tuple[float, float, str]] = []
+        words: list[SubtitleCue] = []
         for seg in result.get("segments", []):
             for w in seg.get("words") or []:
                 tok = (w.get("word") or "").strip()
                 if not tok:
                     continue
-                words.append((float(w["start"]), float(w["end"]), tok))
+                words.append(SubtitleCue(float(w["start"]),
+                                         float(w["end"]), tok))
+        return words
 
-        if not words:
+    def _even_align(self, script: Script,
+                    voice: VoiceClip) -> list[SubtitleCue]:
+        duration = voice.duration or max(
+            1.0, len(script.full_text.split()) / 2.6)
+        tokens = script.full_text.split()
+        if not tokens:
             return []
+        slot = duration / len(tokens)
+        return [
+            SubtitleCue(i * slot, (i + 1) * slot, tok)
+            for i, tok in enumerate(tokens)
+        ]
 
-        if self.mode == "word":
-            return [SubtitleCue(s, e, t) for s, e, t in words]
-
-        # sentence mode: group ~8 words per cue, break on .?!
-        cues: list[SubtitleCue] = []
-        chunk: list[tuple[float, float, str]] = []
-        for w in words:
-            chunk.append(w)
-            if w[2].endswith((".", "!", "?")) or len(chunk) >= 8:
-                cues.append(SubtitleCue(chunk[0][0], chunk[-1][1],
-                                        " ".join(x[2] for x in chunk).strip()))
+    # ------------------------------------------------------------------ grouping
+    @staticmethod
+    def _group_into_sentences(cues: list[SubtitleCue]) -> list[SubtitleCue]:
+        out: list[SubtitleCue] = []
+        chunk: list[SubtitleCue] = []
+        for c in cues:
+            chunk.append(c)
+            if c.text.rstrip().endswith((".", "!", "?")) or len(chunk) >= 8:
+                out.append(SubtitleCue(
+                    chunk[0].start, chunk[-1].end,
+                    " ".join(x.text for x in chunk).strip(),
+                ))
                 chunk = []
         if chunk:
-            cues.append(SubtitleCue(chunk[0][0], chunk[-1][1],
-                                    " ".join(x[2] for x in chunk).strip()))
-        return cues
-
-    def _even_align(self, script: Script, voice: VoiceClip) -> list[SubtitleCue]:
-        duration = voice.duration or max(1.0, len(script.full_text.split()) / 2.6)
-        if self.mode == "word":
-            tokens = script.full_text.split()
-            if not tokens:
-                return []
-            slot = duration / len(tokens)
-            return [
-                SubtitleCue(i * slot, (i + 1) * slot, tok)
-                for i, tok in enumerate(tokens)
-            ]
-
-        sentences = script.sentences or [script.full_text]
-        word_counts = [max(1, len(s.split())) for s in sentences]
-        total_words = sum(word_counts)
-        cues: list[SubtitleCue] = []
-        cursor = 0.0
-        for sent, count in zip(sentences, word_counts):
-            span = duration * count / total_words
-            cues.append(SubtitleCue(cursor, cursor + span, sent))
-            cursor += span
-        return cues
+            out.append(SubtitleCue(
+                chunk[0].start, chunk[-1].end,
+                " ".join(x.text for x in chunk).strip(),
+            ))
+        return out

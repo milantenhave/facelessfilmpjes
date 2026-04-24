@@ -1,10 +1,14 @@
 """JSON API endpoints used by HTMX + the frontend for live data."""
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request
-from sqlalchemy import select
+import tempfile
+from pathlib import Path
+
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import FileResponse
 
 from ...db import Channel, Job, JobStatus, session_scope
+from ...voice_generator import TTSFactory
 
 router = APIRouter()
 
@@ -73,6 +77,33 @@ async def cancel_job(job_id: int):
         if j.status == JobStatus.pending:
             j.status = JobStatus.cancelled
             return {"cancelled": True}
-    # Running jobs can't be interrupted mid-API-call; we just mark and let
-    # the runner notice on next status write. For solo use, simplest path.
     return {"cancelled": False, "reason": "already running"}
+
+
+@router.post("/jobs/{job_id}/delete")
+async def delete_job(job_id: int):
+    """Remove a job row; does not delete files on disk."""
+    with session_scope() as s:
+        j = s.get(Job, job_id)
+        if not j:
+            raise HTTPException(404)
+        s.delete(j)
+    return {"deleted": True}
+
+
+@router.get("/voice/sample")
+async def voice_sample(
+    request: Request,
+    voice: str = Query("nova"),
+    text: str = Query("This is what the voice sounds like."),
+):
+    """Synthesize a 1-shot sample so you can audition voices in the UI."""
+    cfg = request.app.state.cfg
+    tts = TTSFactory(cfg)
+    tmp = Path(tempfile.mkstemp(suffix=".mp3")[1])
+    try:
+        clip = tts.synthesize(text, tmp, voice_override=voice)
+    except Exception as exc:   # noqa: BLE001
+        raise HTTPException(500, f"voice sample failed: {exc}")
+    return FileResponse(str(clip.path), media_type="audio/mpeg",
+                        filename=f"sample-{voice}.mp3")

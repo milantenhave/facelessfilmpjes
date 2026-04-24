@@ -1,4 +1,12 @@
-"""Pick the right TTS backend at runtime."""
+"""Pick the right TTS backend at runtime.
+
+Ensures the correct file extension is used per backend:
+- OpenAI TTS writes .mp3
+- Local fallbacks write .wav
+
+Without this fix, a .mp3-named file can actually contain WAV bytes and confuse
+downstream consumers (Whisper, Creatomate).
+"""
 from __future__ import annotations
 
 import os
@@ -12,13 +20,6 @@ log = get_logger(__name__)
 
 
 class TTSFactory:
-    """Wraps OpenAI TTS HD with the local fallback generator.
-
-    Order:
-      1. OpenAI TTS (if OPENAI_API_KEY present and TTS_ENGINE != 'local')
-      2. Local pyttsx3/espeak/silent fallback via VoiceGenerator
-    """
-
     def __init__(self, cfg: dict) -> None:
         self.cfg = cfg
         self.local = VoiceGenerator(cfg)
@@ -29,19 +30,22 @@ class TTSFactory:
         speed = float(tts_cfg.get("speed", 1.0))
 
         self._openai: OpenAITTS | None = None
-        if engine in ("openai", "openai_tts", "") and os.getenv("OPENAI_API_KEY"):
+        if engine in ("openai", "openai_tts", "") \
+                and os.getenv("OPENAI_API_KEY"):
             self._openai = OpenAITTS(voice=voice, model=model, speed=speed)
 
     def synthesize(self, text: str, out_path: Path,
                    voice_override: str | None = None) -> VoiceClip:
         if self._openai and self._openai.available():
+            target = out_path.with_suffix(".mp3")
             try:
-                return self._openai.synthesize(text, out_path,
+                return self._openai.synthesize(text, target,
                                                voice_override=voice_override)
             except Exception as exc:  # noqa: BLE001
                 log.warning("OpenAI TTS failed (%s) — falling back to local.",
                             _unwrap(exc))
-        return self.local.synthesize(text, out_path)
+        target = out_path.with_suffix(".wav")
+        return self.local.synthesize(text, target)
 
 
 def _unwrap(exc: BaseException) -> str:

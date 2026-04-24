@@ -1,3 +1,3 @@
-from .media_fetcher import MediaClip, MediaFetcher
+from .media_fetcher import MediaBatch, MediaClip, MediaFetcher, extract_keywords
 
-__all__ = ["MediaClip", "MediaFetcher"]
+__all__ = ["MediaBatch", "MediaClip", "MediaFetcher", "extract_keywords"]

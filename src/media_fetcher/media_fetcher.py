@@ -1,13 +1,18 @@
 """Fetch matching stock footage/images for each sentence of a script.
 
-Supports Pexels + Pixabay. Falls back to generating a solid-colour still so the
-video can always render end-to-end.
+Supports Pexels + Pixabay. Designed for visual variety:
+- Each sentence gets its own query, formed primarily from sentence tokens.
+- We request 15 candidates per query and pick a random unused one, so repeat
+  runs and repeat queries don't return the same clip.
+- A per-batch memory of already-used video IDs prevents dupes within one video.
+- If all providers are exhausted we fall back to a solid-colour still.
 """
 from __future__ import annotations
 
 import os
+import random
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import requests
@@ -24,17 +29,23 @@ _STOPWORDS = {
     "these", "those", "at", "as", "by", "from", "your", "you", "i", "we", "they",
     "them", "their", "our", "his", "her", "its", "my", "me", "will", "just",
     "so", "if", "then", "than", "not", "no", "yes", "do", "does", "did", "done",
+    "what", "when", "why", "how", "who", "which", "because", "about", "into",
+    "over", "under", "out", "up", "down", "very", "really", "also", "more",
+    "most", "some", "any", "each", "every", "all", "one", "two", "three",
 }
 
 
 def extract_keywords(text: str, extra: list[str] | None = None,
                      limit: int = 3) -> list[str]:
-    """Pick 1–N strong keywords from a sentence."""
+    """Pick 1–N concrete keywords from a sentence.
+
+    Sentence tokens come FIRST so each sentence gets its own visual. Shared
+    topic seeds are only appended as backup if the sentence is too generic.
+    """
     tokens = re.findall(r"[a-zA-Z][a-zA-Z\-]{2,}", (text or "").lower())
     ranked = [t for t in tokens if t not in _STOPWORDS]
     if extra:
-        ranked = [*extra, *ranked]
-    # Stable dedupe
+        ranked = [*ranked, *[e.lower() for e in extra]]
     seen: set[str] = set()
     out: list[str] = []
     for t in ranked:
@@ -44,7 +55,7 @@ def extract_keywords(text: str, extra: list[str] | None = None,
         out.append(t)
         if len(out) >= limit:
             break
-    return out or ["abstract"]
+    return out or ["motion background"]
 
 
 @dataclass
@@ -54,7 +65,16 @@ class MediaClip:
     duration: float | None = None
     source: str = ""
     query: str = ""
-    remote_url: str = ""   # direct CDN URL when available (for cloud renderers)
+    remote_url: str = ""      # direct CDN URL when available (cloud renderers)
+    native_duration: float = 0.0
+    trim_start: float = 0.0
+
+
+@dataclass
+class MediaBatch:
+    """Per-video memory: avoids using the same stock clip twice in one render."""
+    used_ids: set[str] = field(default_factory=set)
+    used_urls: set[str] = field(default_factory=set)
 
 
 class MediaFetcher:
@@ -68,97 +88,150 @@ class MediaFetcher:
         self.pexels_key = os.getenv("PEXELS_API_KEY", "")
         self.pixabay_key = os.getenv("PIXABAY_API_KEY", "")
 
+    def new_batch(self) -> MediaBatch:
+        return MediaBatch()
+
+    # ------------------------------------------------------------------
     def fetch_for_sentence(self, sentence: str, seed_keywords: list[str],
-                           out_dir: Path, index: int) -> MediaClip:
+                           out_dir: Path, index: int,
+                           batch: MediaBatch | None = None) -> MediaClip:
         out_dir.mkdir(parents=True, exist_ok=True)
-        keywords = extract_keywords(sentence, extra=seed_keywords, limit=3)
-        query = " ".join(keywords[:2])
+        batch = batch or MediaBatch()
 
-        for provider in self.providers:
-            try:
-                if provider == "pexels" and self.pexels_key:
-                    clip = self._pexels(query, out_dir, index)
+        primary_kw = extract_keywords(sentence, extra=None, limit=2)
+        fallback_kw = [k.lower() for k in (seed_keywords or [])][:2] or \
+                      ["cinematic", "lifestyle"]
+
+        queries = [
+            " ".join(primary_kw),
+            primary_kw[0] if primary_kw else "motion",
+            " ".join(fallback_kw),
+            random.choice(fallback_kw),
+            "cinematic abstract",
+        ]
+        # Dedupe preserving order
+        queries = list(dict.fromkeys(q for q in queries if q))
+
+        for query in queries:
+            for provider in self.providers:
+                try:
+                    clip = None
+                    if provider == "pexels" and self.pexels_key:
+                        clip = self._pexels(query, out_dir, index, batch)
+                    elif provider == "pixabay" and self.pixabay_key:
+                        clip = self._pixabay(query, out_dir, index, batch)
                     if clip:
                         return clip
-                elif provider == "pixabay" and self.pixabay_key:
-                    clip = self._pixabay(query, out_dir, index)
-                    if clip:
-                        return clip
-            except Exception as exc:   # noqa: BLE001
-                log.warning("media provider %s failed (%s) — trying next.",
-                            provider, exc)
+                except Exception as exc:   # noqa: BLE001
+                    log.warning("media provider %s failed for %r (%s) — "
+                                "trying next.", provider, query, exc)
 
-        log.info("no remote media for %r — using colour fallback.", query)
-        return self._color_fallback(out_dir, index, query)
+        log.info("no remote media match — using colour fallback for sentence %d.",
+                 index)
+        return self._color_fallback(out_dir, index, " ".join(primary_kw))
 
-    # -- providers ------------------------------------------------------
+    # ------------------------------------------------------------------ providers
     @retry(stop=stop_after_attempt(2),
            wait=wait_exponential(multiplier=1, min=1, max=4))
-    def _pexels(self, query: str, out_dir: Path, index: int) -> MediaClip | None:
-        cache_key = self.cache.key("pexels", query, self.orientation)
-        meta_path = self.cache.path("media_meta", cache_key, ".json")
+    def _pexels(self, query: str, out_dir: Path, index: int,
+                batch: MediaBatch) -> MediaClip | None:
         resp = requests.get(
             "https://api.pexels.com/videos/search",
             headers={"Authorization": self.pexels_key},
-            params={"query": query, "orientation": self.orientation,
-                    "per_page": 8, "size": "medium"},
+            params={
+                "query": query,
+                "orientation": self.orientation,
+                "per_page": 15,
+                "size": "medium",
+            },
             timeout=30,
         )
         resp.raise_for_status()
-        data = resp.json()
-        videos = data.get("videos", [])
-        if not videos:
+        videos = resp.json().get("videos", []) or []
+        # Keep only unused ones, then pick randomly from the top.
+        candidates = [v for v in videos
+                      if str(v.get("id")) not in batch.used_ids]
+        if not candidates:
             return None
+        random.shuffle(candidates)
+        video = candidates[0]
 
-        video = videos[0]
         files = sorted(
             (f for f in video.get("video_files", [])
-             if f.get("file_type", "").startswith("video/")),
+             if str(f.get("file_type", "")).startswith("video/")),
             key=lambda f: (f.get("height") or 0),
         )
         if not files:
             return None
-        target = next((f for f in files if (f.get("height") or 0) >= 1080),
-                      files[-1])
+        # Prefer 1080p portrait if available
+        target = next((f for f in files
+                       if (f.get("height") or 0) >= 1080
+                       and (f.get("height") or 0) >= (f.get("width") or 0)),
+                      None) or next(
+            (f for f in files if (f.get("height") or 0) >= 1080), None,
+        ) or files[-1]
         url = target["link"]
+        if url in batch.used_urls:
+            return None
+
+        native_duration = float(video.get("duration") or self.min_duration)
+        batch.used_ids.add(str(video.get("id")))
+        batch.used_urls.add(url)
+
         target_path = out_dir / f"clip_{index:02d}_pexels.mp4"
         self._download(url, target_path)
-        meta_path.write_text(str(video.get("id")), "utf-8")
         return MediaClip(
             path=target_path, kind="video",
-            duration=float(video.get("duration") or self.min_duration),
-            source="pexels", query=query, remote_url=url,
+            duration=native_duration, source="pexels",
+            query=query, remote_url=url,
+            native_duration=native_duration,
         )
 
     @retry(stop=stop_after_attempt(2),
            wait=wait_exponential(multiplier=1, min=1, max=4))
-    def _pixabay(self, query: str, out_dir: Path, index: int) -> MediaClip | None:
+    def _pixabay(self, query: str, out_dir: Path, index: int,
+                 batch: MediaBatch) -> MediaClip | None:
         resp = requests.get(
             "https://pixabay.com/api/videos/",
             params={"key": self.pixabay_key, "q": query,
-                    "per_page": 8, "safesearch": "true"},
+                    "per_page": 15, "safesearch": "true",
+                    "orientation": "vertical"},
             timeout=30,
         )
         resp.raise_for_status()
-        hits = resp.json().get("hits", [])
-        if not hits:
+        hits = resp.json().get("hits", []) or []
+        candidates = [h for h in hits
+                      if str(h.get("id")) not in batch.used_ids]
+        if not candidates:
             return None
-        video = hits[0]
+        random.shuffle(candidates)
+        video = candidates[0]
+
         variants = video.get("videos", {})
         chosen = variants.get("large") or variants.get("medium") \
             or variants.get("small") or variants.get("tiny")
         if not chosen or not chosen.get("url"):
             return None
+        url = chosen["url"]
+        if url in batch.used_urls:
+            return None
+
+        native_duration = float(video.get("duration") or self.min_duration)
+        batch.used_ids.add(str(video.get("id")))
+        batch.used_urls.add(url)
+
         target_path = out_dir / f"clip_{index:02d}_pixabay.mp4"
-        self._download(chosen["url"], target_path)
+        self._download(url, target_path)
         return MediaClip(
             path=target_path, kind="video",
-            duration=float(video.get("duration") or self.min_duration),
-            source="pixabay", query=query, remote_url=chosen["url"],
+            duration=native_duration, source="pixabay",
+            query=query, remote_url=url,
+            native_duration=native_duration,
         )
 
-    # -- fallback -------------------------------------------------------
-    def _color_fallback(self, out_dir: Path, index: int, query: str) -> MediaClip:
+    # ------------------------------------------------------------------ fallback
+    def _color_fallback(self, out_dir: Path, index: int,
+                        query: str) -> MediaClip:
         from PIL import Image
         target_path = out_dir / f"clip_{index:02d}_fallback.png"
         img = Image.new("RGB", (1080, 1920), self.fallback_color)
@@ -166,7 +239,7 @@ class MediaFetcher:
         return MediaClip(path=target_path, kind="image",
                          duration=None, source="fallback", query=query)
 
-    # -- io -------------------------------------------------------------
+    # ------------------------------------------------------------------ io
     @staticmethod
     def _download(url: str, dest: Path) -> None:
         with requests.get(url, stream=True, timeout=120) as r:
