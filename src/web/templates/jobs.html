@@ -4,7 +4,7 @@
 <h1>Jobs</h1>
 <section class="card">
   <table class="jobs">
-    <thead><tr><th>#</th><th>Created</th><th>Channel</th><th>Status</th><th>Progress</th><th>Hook</th><th>Published</th></tr></thead>
+    <thead><tr><th>#</th><th>Created</th><th>Channel</th><th>Status</th><th>Progress</th><th>Hook</th><th>Preview</th><th>Published</th></tr></thead>
     <tbody>
     {% for j in jobs %}
       <tr data-job-id="{{ j.id }}" data-status="{{ j.status }}"
@@ -19,6 +19,12 @@
         </td>
         <td class="hook">{{ j.idea_hook }}</td>
         <td>
+          {% if j.video_path %}
+            <button class="small" onclick="toggleVideo({{ j.id }})">▶ preview</button>
+            <a class="small" href="/media/video/{{ j.id }}" download>⤓</a>
+          {% else %}—{% endif %}
+        </td>
+        <td>
           {% if j.video_url %}
             <a href="{{ j.video_url }}" target="_blank">open ↗</a>
           {% elif j.error %}
@@ -26,8 +32,23 @@
           {% else %}—{% endif %}
         </td>
       </tr>
+      {% if j.video_path %}
+      <tr class="preview-row" id="preview-{{ j.id }}" style="display:none;">
+        <td colspan="8" class="preview-cell">
+          <video controls preload="none" src="/media/video/{{ j.id }}"></video>
+          {% if j.error %}<div class="error-inline">Error: {{ j.error }}</div>{% endif %}
+        </td>
+      </tr>
+      {% endif %}
     {% endfor %}
     </tbody>
   </table>
 </section>
+<script>
+function toggleVideo(id) {
+  const row = document.getElementById('preview-' + id);
+  if (!row) return;
+  row.style.display = row.style.display === 'none' ? 'table-row' : 'none';
+}
+</script>
 {% endblock %}

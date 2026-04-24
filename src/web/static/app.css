@@ -75,6 +75,9 @@ code { background: var(--panel-2); padding: 2px 5px; border-radius: 4px; font-si
 
 .hook { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+.preview-cell { background: #0d0d13; padding: 14px 12px; text-align: center; }
+.preview-cell video { max-width: 320px; max-height: 568px; border-radius: 10px; background: #000; }
+
 footer { padding: 8px 20px; color: var(--muted); font-size: 12px; text-align: right; }
 .sse-status { opacity: .6; }
 .sse-status.live { color: var(--ok); opacity: 1; }

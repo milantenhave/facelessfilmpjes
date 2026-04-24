@@ -13,7 +13,11 @@ from fastapi.responses import RedirectResponse
 
 OPEN_PATHS = {
     "/login", "/logout", "/healthz", "/favicon.ico",
-    "/static", "/oauth", "/media",
+    "/static", "/oauth",
+    # Only `/media/tmp/<token>` is open so Creatomate can fetch voice-overs
+    # with an unguessable token. Finished-video previews live under
+    # `/media/video/...` and stay behind the login.
+    "/media/tmp",
 }
 
 
