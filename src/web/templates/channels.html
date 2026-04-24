@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Channels{% endblock %}
+{% block content %}
+<h1>Channels</h1>
+
+<section class="card">
+  <h2>Existing</h2>
+  {% if channels %}
+  <table>
+    <thead><tr><th>Name</th><th>Platform</th><th>Niche</th><th>Connected</th><th>Schedules</th><th></th></tr></thead>
+    <tbody>
+    {% for c in channels %}
+      <tr>
+        <td>{{ c.name }}</td>
+        <td>{{ c.platform }}</td>
+        <td>{{ c.niche }}</td>
+        <td>
+          {% if c.youtube_connected %}
+            <span class="ok">✓ {{ c.youtube_account }}</span>
+            <form method="post" action="/oauth/youtube/disconnect/{{ c.id }}" style="display:inline">
+              <button class="small danger">Disconnect</button>
+            </form>
+          {% else %}
+            <a class="btn" href="/oauth/youtube/start?channel_id={{ c.id }}">Connect YouTube</a>
+          {% endif %}
+        </td>
+        <td>{{ c.schedules|length }}</td>
+        <td>
+          <form method="post" action="/channels/{{ c.id }}/delete" style="display:inline"
+                onsubmit="return confirm('Delete channel {{ c.name }}?');">
+            <button class="small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No channels yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Add channel</h2>
+  <form method="post" action="/channels" class="grid">
+    <label>Name <input name="name" required placeholder="e.g. Deep Facts NL"></label>
+    <label>Platform
+      <select name="platform">
+        {% for p in platforms %}<option value="{{ p }}">{{ p }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Niche
+      <select name="niche_id" required>
+        {% for n in niches %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Voice (OpenAI TTS) <input name="voice_id" value="nova" placeholder="alloy/nova/echo/onyx/shimmer/..."></label>
+    <label>Accent color <input name="accent_color" value="#FFD400" type="color"></label>
+    <label>Font family <input name="font_family" value="Montserrat"></label>
+    <button type="submit">Create channel</button>
+  </form>
+  {% if not niches %}
+  <p class="note">Create a <a href="/niches">niche</a> first.</p>
+  {% endif %}
+</section>
+{% endblock %}

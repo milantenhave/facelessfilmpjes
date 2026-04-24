@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<h1>Jobs</h1>
+<section class="card">
+  <table class="jobs">
+    <thead><tr><th>#</th><th>Created</th><th>Channel</th><th>Status</th><th>Progress</th><th>Hook</th><th>Published</th></tr></thead>
+    <tbody>
+    {% for j in jobs %}
+      <tr data-job-id="{{ j.id }}" data-status="{{ j.status }}"
+          class="{% if highlight == j.id %}highlight{% endif %}">
+        <td>#{{ j.id }}</td>
+        <td>{{ j.created_at }}</td>
+        <td>{{ j.channel }}</td>
+        <td class="col-status">{{ j.status }}</td>
+        <td>
+          <div class="bar"><div class="bar-fill" style="width: {{ j.progress }}%"></div></div>
+          <span class="col-detail muted">{{ j.detail }}</span>
+        </td>
+        <td class="hook">{{ j.idea_hook }}</td>
+        <td>
+          {% if j.video_url %}
+            <a href="{{ j.video_url }}" target="_blank">open ↗</a>
+          {% elif j.error %}
+            <span class="error-inline" title="{{ j.error }}">error</span>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

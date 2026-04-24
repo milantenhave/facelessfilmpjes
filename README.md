@@ -1,195 +1,197 @@
 # facelessfilmpjes
 
-Fully automated pipeline for generating **faceless short-form videos** (TikTok,
-Instagram Reels, YouTube Shorts) — ideas → script → voiceover → visuals →
-edited 9:16 video → subtitles → captions → upload-ready bundle.
-
-No paid SaaS is required: every stage has a free / offline fallback so the
-pipeline runs end-to-end on a laptop or VPS out of the box.
+Volledig autonome **multi-channel, multi-niche faceless video factory** voor TikTok
+en YouTube Shorts.
 
 ```
-scheduler ─▶ idea_generator ─▶ script_generator ─▶ voice_generator
-                                      │                  │
-                                      ▼                  ▼
-                              caption_generator     media_fetcher
-                                      │                  │
-                                      └──────▶ video_editor ◀── subtitle_generator
-                                                       │
-                                                       ▼
-                                                   uploader ─▶ analytics
+┌───────────────────────────────────────────────────────────┐
+│  FastAPI web UI (http://localhost:8000)                   │
+│  ─ Channels / niches / schedules / jobs / live SSE status │
+│  ─ YouTube OAuth connect flow per channel                 │
+└────────────────────────────┬──────────────────────────────┘
+                             │
+                  ┌──────────┴──────────┐
+                  │  SQLite state       │  channels, niches,
+                  │                     │  schedules, jobs,
+                  │                     │  oauth tokens
+                  └──────────┬──────────┘
+                             │
+           ┌─────────────────┴─────────────────┐
+           │   APScheduler + worker thread     │
+           └─────────────────┬─────────────────┘
+                             │
+  ┌──────────────────────────┴──────────────────────────────┐
+  │ Pipeline (runs one job, emits live status events)       │
+  │                                                         │
+  │  Idea        → Anthropic / OpenAI                       │
+  │  Script      → Anthropic / OpenAI                       │
+  │  Voice       → OpenAI TTS HD (or local fallback)        │
+  │  Media       → Pexels / Pixabay (free)                  │
+  │  Alignment   → Whisper (optional)                       │
+  │  Render      → Creatomate (word-by-word captions)       │
+  │  Caption     → Anthropic / OpenAI                       │
+  │  Upload      → YouTube Data API v3 (Shorts)             │
+  └─────────────────────────────────────────────────────────┘
 ```
 
 ## Features
 
-- **Idea generation** — 5–10 viral ideas per niche with hook, topic, emotion and
-  angle, optionally steered by past analytics winners.
-- **Script generation** — hook / body / payoff / CTA, tuned for 15–30s retention.
-- **Voice synthesis** — pluggable TTS: Coqui → pyttsx3 → espeak → silent
-  fallback.
-- **Stock footage** — Pexels + Pixabay with on-disk cache; solid-colour PNG
-  fallback when offline.
-- **Video editor** — FFmpeg-based 9:16 composer with fade transitions, Ken
-  Burns on stills, optional background music.
-- **Subtitles** — word-level Whisper alignment when available; even split
-  fallback; burned-in with configurable style.
-- **Captions** — title, description, and optimised hashtag set per video.
-- **Uploader** — dry-run by default, with pluggable platform hooks for TikTok /
-  Reels / YouTube Shorts.
-- **Analytics** — SQLite, feedback loop that surfaces winning hook patterns
-  back to the idea generator.
-- **A/B testing** — optional multiple script variants per idea.
-- **Scheduler** — in-process (daily/hourly/custom) + cron & systemd examples.
-- **Dashboard** — minimal Flask UI to preview videos and JSON analytics.
-- **CLI** — `run`, `schedule`, `ideas`, `analytics`, `dashboard`.
+- **Multi-channel** — elk channel heeft z'n eigen niche, voice, kleuren, font, upload-defaults
+- **Multi-niche** — herbruikbare content-strategieën met custom LLM-instructies per niche
+- **Live dashboard** — Server-Sent Events streamen job status (rendering/uploading/done) real-time
+- **YouTube OAuth** — "Connect YouTube" knop per channel; refresh tokens automatisch beheerd
+- **Creatomate rendering** — professionele 9:16 output met word-by-word animated captions, Ken Burns zoom, muziek
+- **OpenAI TTS HD** — natuurlijke stem, instelbaar per channel (nova / onyx / shimmer / etc.)
+- **Cron schedules** — per channel meerdere slots per dag
+- **Auto-cleanup** vriendelijk voor kleine VPSen (1GB RAM, 10GB disk werkt)
+- **Wachtwoord-beveiligde UI** — voor zolang je via SSH-tunnel draait, veilig genoeg
+- **TikTok-ready hook** — ontwerp ondersteunt meerdere platforms; TikTok upload is fase 2
 
-## Install
+## Stack & kosten (indicatief)
+
+| Dienst | Gebruik | ~Kosten |
+|---|---|---|
+| Anthropic Claude (of OpenAI) | scripts, ideeën, captions | €3-8/mnd |
+| OpenAI TTS HD | voice-over | €5-15/mnd |
+| Creatomate | video rendering | €8-25/mnd |
+| Pexels / Pixabay | stock footage | gratis |
+| Google Cloud | YouTube Data API v3 | gratis (10k units/dag) |
+| VPS (1 GB / 1 core) | orchestratie + UI | €5/mnd |
+| **Totaal bij 1-3 kanalen** | | **~€25-60/mnd** |
+
+## Install op Ubuntu VPS (24.04)
+
+Als root op een schone VPS:
 
 ```bash
-git clone https://github.com/milantenhave/facelessfilmpjes.git
-cd facelessfilmpjes
-./scripts/setup.sh
-source .venv/bin/activate
+bash <(curl -fsSL https://raw.githubusercontent.com/milantenhave/facelessfilmpjes/main/scripts/install-vps.sh)
 ```
 
-`setup.sh` creates `.venv`, installs `requirements.txt`, copies
-`config/config.example.yaml` → `config/config.yaml`, and copies `.env.example`
-→ `.env`. Install `ffmpeg` system-wide if you can; otherwise `imageio-ffmpeg`
-is used as a fallback.
+Of manueel:
 
-### Optional: API keys
+```bash
+git clone https://github.com/milantenhave/facelessfilmpjes.git /opt/facelessfilmpjes
+cd /opt/facelessfilmpjes
+bash scripts/install-vps.sh
+```
 
-Edit `.env`:
+Dit doet:
+
+1. Installeert Python, ffmpeg, git
+2. Maakt een 2 GB swapfile aan (essentieel op 1 GB RAM)
+3. Maakt een `faceless` user aan
+4. Installeert de app in `/opt/facelessfilmpjes` + venv
+5. Zet systemd service `facelessfilmpjes` op (auto-start bij reboot)
+6. Initialiseert de SQLite DB
+
+## Configureer `.env`
+
+```bash
+sudo -u faceless nano /opt/facelessfilmpjes/.env
+```
+
+Minimaal nodig:
 
 ```env
-LLM_PROVIDER=anthropic           # or openai / ollama / template
+DASHBOARD_PASSWORD=een-stevig-wachtwoord
+SESSION_SECRET=$(openssl rand -hex 32)
+PUBLIC_BASE_URL=http://localhost:8000
+
+LLM_PROVIDER=anthropic
 ANTHROPIC_API_KEY=sk-ant-...
+
+TTS_ENGINE=openai
+OPENAI_API_KEY=sk-...
+OPENAI_TTS_VOICE=nova
+
+CREATOMATE_API_KEY=...
+
 PEXELS_API_KEY=...
 PIXABAY_API_KEY=...
-TTS_ENGINE=coqui                 # or pyttsx3 / espeak
+
+GOOGLE_CLIENT_ID=...
+GOOGLE_CLIENT_SECRET=...
 ```
 
-If none are set, the system still works using the built-in template generator,
-silent TTS, and a solid-colour background — useful for validating wiring.
-
-## Usage
-
-### One-shot run
+Start:
 
 ```bash
-python -m src run            # honours videos_per_run in config
-python -m src run -n 5       # override to 5 videos
+systemctl start facelessfilmpjes
+journalctl -u facelessfilmpjes -f    # volg logs
 ```
 
-### Scheduled
+## Verbinden vanaf je laptop (SSH tunnel)
 
 ```bash
-python -m src schedule       # in-process scheduler
+ssh -L 8000:127.0.0.1:8000 root@jouw-vps-ip
 ```
 
-Or use cron (`scripts/cron.example`) / systemd (`scripts/systemd.example.service`).
+Open je browser op **http://localhost:8000**, login met je DASHBOARD_PASSWORD.
 
-### Just ideas
+## Google Cloud project opzetten (eenmalig)
+
+1. Ga naar https://console.cloud.google.com/
+2. Nieuw project → enable **YouTube Data API v3**
+3. OAuth consent screen: type "External", publish status "Testing" volstaat
+4. Credentials → **OAuth client ID** → type "Web application"
+5. **Authorized redirect URI**: `http://localhost:8000/oauth/youtube/callback`
+   - Als je later een domein gebruikt: voeg `https://jouw-domein.nl/oauth/youtube/callback` ook toe
+6. Client ID + Client Secret in `.env` plakken
+7. Bij OAuth consent: voeg jouw Google accounts toe als test users
+8. Restart service: `systemctl restart facelessfilmpjes`
+
+## In de dashboard
+
+1. **Niches** tab → maak 1+ niche aan (bijv. "finance_tips", "deep_facts")
+2. **Channels** tab → nieuw channel → kies platform=youtube, kies niche, voice, kleur
+3. Klik **"Connect YouTube"** → Google login → terug op dashboard = connected ✓
+4. **Schedules** tab → voor elk channel cron toevoegen (bv. `0 9,15,20 * * *` = 3x/dag)
+5. Klik **"Run now"** op een channel om direct een video te produceren en testen
+
+De worker pakt automatisch jobs op, je ziet de status live op `/dashboard` en `/jobs`.
+
+## Lokaal dev draaien
 
 ```bash
-python -m src ideas -n 10
+./scripts/setup.sh                       # venv + deps
+source .venv/bin/activate
+python -m src init-db
+python -m src seed
+python -m src web --reload               # http://localhost:8000
 ```
 
-### Dashboard
+## Architectuur op een rijtje
 
-```bash
-python -m src dashboard --host 0.0.0.0 --port 8765
-```
+- `src/web/` — FastAPI app, Jinja2 templates, HTMX, SSE
+- `src/db/` — SQLAlchemy models (Channel, Niche, Schedule, Job, OAuthToken)
+- `src/worker/` — APScheduler + serial worker thread
+- `src/llm/` — abstract provider (Anthropic / OpenAI / Ollama / template fallback)
+- `src/voice_generator/` — OpenAI TTS HD + local fallback
+- `src/media_fetcher/` — Pexels + Pixabay (met remote URL voor cloud renderer)
+- `src/subtitle_generator/` — Whisper alignment of even split
+- `src/video_editor/` — **CreatomateRenderer** (default) + lokale FFmpeg renderer
+- `src/uploader/` — YouTube Data API v3 + OAuth flow
+- `src/events.py` — in-process pub/sub voor live status via SSE
 
-### Dump analytics
+## Fase 2 (nog te doen)
 
-```bash
-python -m src analytics --out analytics.json
-```
+- **TikTok Content Posting API** — zelfde OAuth-patroon, nieuwe `src/uploader/tiktok.py`.
+  Vereist dat jij eerst een TikTok Developer app + app review doet.
+- **Analytics feedback loop** — per-video metrics uit YouTube Analytics API terugvoeden
+  naar idea generation.
+- **Thumbnail generator** (YouTube-specifiek).
+- **A/B testing UI** — variant winners promoten naar default.
 
-## Output layout
+## Troubleshooting
 
-```
-videos/
-└── 2026-04-24/
-    ├── audio/        # per-video .wav voiceovers
-    ├── scripts/      # per-video .txt (json dump) scripts
-    ├── media/        # per-video stock-footage working dir
-    ├── subtitles/    # per-video .srt files
-    ├── video_01.mp4  # rendered 1080x1920 video
-    └── video_01.json # upload-ready metadata (title, description, hashtags)
-```
-
-`video_01.json` example:
-
-```json
-{
-  "video": "videos/2026-04-24/video_01.mp4",
-  "title": "Stop scrolling. This one thing about self improvement will change your life.",
-  "description": "A 25-second deep dive...\n\nFollow for one uncomfortable truth per day.",
-  "hashtags": ["#selfimprovement", "#shorts", "#reels", "#fyp", "#mindset"],
-  "script": { "hook": "...", "body": "...", "payoff": "...", "cta": "...", "...": "..." },
-  "dry_run": true,
-  "platforms": ["tiktok", "instagram", "youtube"]
-}
-```
-
-## Configuration
-
-All content and video knobs live in `config/config.yaml` (see
-`config/config.example.yaml`). Highlights:
-
-| Path | Purpose |
-| ---- | ------- |
-| `niches` | list of `{name, tone, emotions, weight}` — drives idea generation |
-| `videos_per_run`, `ideas_per_niche` | throughput |
-| `video_length_seconds` | script pacing target |
-| `llm.provider` | `template` / `openai` / `anthropic` / `ollama` |
-| `tts.engine` | `pyttsx3` / `coqui` / `espeak` (auto-fallback to silence) |
-| `media.providers` | `[pexels, pixabay]` — in priority order |
-| `video.resolution` / `fps` / `crf` | final render settings |
-| `subtitles.mode` | `word` (TikTok style) or `sentence` |
-| `ab_testing.enabled` | generate multiple script variants per idea |
-| `analytics.feedback_loop` | surface winning patterns back into idea prompts |
-
-## Running on a VPS
-
-```bash
-# as root
-adduser --disabled-password faceless
-su - faceless
-git clone https://github.com/milantenhave/facelessfilmpjes.git
-cd facelessfilmpjes
-./scripts/setup.sh
-
-# option 1: cron
-crontab -e    # see scripts/cron.example
-
-# option 2: systemd (recommended)
-sudo cp scripts/systemd.example.service /etc/systemd/system/facelessfilmpjes.service
-sudo systemctl daemon-reload
-sudo systemctl enable --now facelessfilmpjes
-```
-
-## Testing
-
-```bash
-pip install pytest
-pytest -q
-```
-
-The tests use the template LLM and silent TTS by default — no API keys
-required. The end-to-end pipeline test is skipped if ffmpeg isn't available.
-
-## Extending
-
-- **New LLM provider** — implement `src.llm.base.LLMProvider.complete` and
-  register it in `src/llm/factory.py`.
-- **New TTS engine** — add a method on `VoiceGenerator` and include it in the
-  `attempts` list in `synthesize`.
-- **New upload target** — subclass `uploader.uploader.PlatformHook` and add it
-  to `_HOOKS`.
+| Probleem | Oplossing |
+|---|---|
+| `OAuth error: redirect_uri_mismatch` | Voeg exact jouw `PUBLIC_BASE_URL + /oauth/youtube/callback` toe in Google Cloud credentials |
+| Rendering faalt met "Creatomate key not set" | Zet `CREATOMATE_API_KEY` in `.env`, restart service |
+| Job blijft op `pending` hangen | Check `journalctl -u facelessfilmpjes -f` — meestal ontbreekt een API key |
+| Out of memory op 1GB VPS | Zorg dat `scripts/install-vps.sh` de swapfile heeft aangemaakt |
+| Video's vullen de disk | Voeg cron toe: `0 3 * * * find /opt/facelessfilmpjes/videos -mtime +7 -delete` |
 
 ## License
 
-MIT (see `LICENSE`). Third-party media you fetch is subject to Pexels / Pixabay
-terms of use.
+MIT.

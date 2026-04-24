@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% block title %}Schedules{% endblock %}
+{% block content %}
+<h1>Schedules</h1>
+
+<section class="card">
+  <h2>Existing</h2>
+  {% if schedules %}
+  <table>
+    <thead><tr><th>Channel</th><th>Cron</th><th>Per slot</th><th>Active</th><th>Last run</th><th></th></tr></thead>
+    <tbody>
+    {% for s in schedules %}
+      <tr>
+        <td>{{ s.channel }}</td>
+        <td><code>{{ s.cron }}</code></td>
+        <td>{{ s.videos_per_slot }}</td>
+        <td>{{ "✓" if s.active else "off" }}</td>
+        <td>{{ s.last_run_at or "—" }}</td>
+        <td>
+          <form method="post" action="/schedules/{{ s.id }}/delete" style="display:inline">
+            <button class="small danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p>No schedules yet.</p>{% endif %}
+</section>
+
+<section class="card">
+  <h2>Add schedule</h2>
+  <p class="note">
+    Cron is UTC, 5 fields: <code>min hour day month weekday</code>.
+    Examples: <code>0 9,15,20 * * *</code> (three times a day at 09/15/20 UTC),
+    <code>*/30 * * * *</code> (every 30 min).
+  </p>
+  <form method="post" action="/schedules" class="grid">
+    <label>Channel
+      <select name="channel_id" required>
+        {% for c in channels %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Cron <input name="cron" value="0 9,15,20 * * *"></label>
+    <label>Videos per tick
+      <input name="videos_per_slot" type="number" value="1" min="1" max="5">
+    </label>
+    <label class="full"><input type="checkbox" name="active" checked> Active</label>
+    <button type="submit">Create schedule</button>
+  </form>
+</section>
+{% endblock %}

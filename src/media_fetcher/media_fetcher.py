@@ -54,6 +54,7 @@ class MediaClip:
     duration: float | None = None
     source: str = ""
     query: str = ""
+    remote_url: str = ""   # direct CDN URL when available (for cloud renderers)
 
 
 class MediaFetcher:
@@ -126,7 +127,7 @@ class MediaFetcher:
         return MediaClip(
             path=target_path, kind="video",
             duration=float(video.get("duration") or self.min_duration),
-            source="pexels", query=query,
+            source="pexels", query=query, remote_url=url,
         )
 
     @retry(stop=stop_after_attempt(2),
@@ -153,7 +154,7 @@ class MediaFetcher:
         return MediaClip(
             path=target_path, kind="video",
             duration=float(video.get("duration") or self.min_duration),
-            source="pixabay", query=query,
+            source="pixabay", query=query, remote_url=chosen["url"],
         )
 
     # -- fallback -------------------------------------------------------

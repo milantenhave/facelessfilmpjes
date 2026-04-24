@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}facelessfilmpjes{% endblock %}</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+</head>
+<body>
+  <header>
+    <div class="brand">facelessfilmpjes</div>
+    <nav>
+      <a href="/dashboard">Dashboard</a>
+      <a href="/channels">Channels</a>
+      <a href="/niches">Niches</a>
+      <a href="/schedules">Schedules</a>
+      <a href="/jobs">Jobs</a>
+      <a href="/logout" class="logout">Logout</a>
+    </nav>
+  </header>
+  <main>
+    {% block content %}{% endblock %}
+  </main>
+  <footer>
+    <span id="sse-status" class="sse-status">● connecting…</span>
+  </footer>
+  <script>
+  (function(){
+    const status = document.getElementById('sse-status');
+    const es = new EventSource('/events');
+    es.addEventListener('hello', () => { status.textContent = '● live'; status.classList.add('live'); });
+    es.addEventListener('ping',  () => {});
+    es.addEventListener('job.update', (e) => {
+      try {
+        const evt = JSON.parse(e.data);
+        const pl  = evt.payload || {};
+        const row = document.querySelector(`[data-job-id="${evt.job_id}"]`);
+        if (!row) return;
+        const statusCell = row.querySelector('.col-status');
+        const barFill    = row.querySelector('.bar-fill');
+        const detail     = row.querySelector('.col-detail');
+        if (statusCell) statusCell.textContent = pl.status;
+        if (barFill)    barFill.style.width = (pl.progress || 0) + '%';
+        if (detail)     detail.textContent = pl.detail || '';
+        row.dataset.status = pl.status;
+      } catch(_) {}
+    });
+    es.onerror = () => { status.textContent = '● reconnecting'; status.classList.remove('live'); };
+  })();
+  </script>
+</body>
+</html>

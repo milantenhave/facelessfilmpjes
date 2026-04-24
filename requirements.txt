@@ -1,16 +1,38 @@
+# Core
 PyYAML>=6.0
-requests>=2.31.0
 python-dotenv>=1.0.0
-schedule>=1.2.0
-moviepy>=1.0.3
-imageio-ffmpeg>=0.4.9
-Pillow>=10.0.0
-numpy>=1.24.0
-openai-whisper>=20231117
-TTS>=0.22.0
-pydub>=0.25.1
+requests>=2.31.0
+tenacity>=8.2.0
 click>=8.1.0
 rich>=13.7.0
-flask>=3.0.0
-tenacity>=8.2.0
+
+# Web / worker / DB
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+jinja2>=3.1.3
+python-multipart>=0.0.9
+itsdangerous>=2.1.2
+sse-starlette>=2.0.0
+SQLAlchemy>=2.0.25
+alembic>=1.13.0
+APScheduler>=3.10.4
+
+# YouTube (OAuth + upload)
+google-auth>=2.27.0
+google-auth-oauthlib>=1.2.0
+google-api-python-client>=2.118.0
+
+# Media
+Pillow>=10.0.0
+imageio-ffmpeg>=0.4.9          # ffmpeg fallback binary
+moviepy>=1.0.3                 # optional, only used by local renderer
 srt>=3.5.3
+
+# Optional local fallbacks — NOT needed for Creatomate/OpenAI stack
+# Uncomment on beefier machines:
+# openai-whisper>=20231117
+# TTS>=0.22.0
+# pyttsx3>=2.90
+
+# Tests
+pytest>=8.0.0
